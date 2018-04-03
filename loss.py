@@ -89,7 +89,9 @@ def collect_vectors(tensor, x, y):
     '''
     vectors = []
     for i in range(len(x)):
-        vectors.append(tensor[:, x[i], y[i]])
+        vector = tensor[:, x[i], y[i]]
+        vector = vector.type(double_type)
+        vectors.append(vector)
 
     return vectors
 
@@ -108,7 +110,6 @@ def get_distances(vectors):
 
     distance_matrix = squared_norms - 2*torch.matmul(vectors, torch.t(vectors)) + torch.t(squared_norms)
     distance_matrix = torch.abs(distance_matrix)
-    distance_matrix = distance_matrix.double()
     distance_matrix = 2.0 / (1 + torch.exp(distance_matrix))
 
     return distance_matrix

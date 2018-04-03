@@ -53,20 +53,24 @@ class FeatureExtractor(nn.Module):
 class UpsamplingBlock(nn.Module):
     def __init__(self, channels_in, channels_out):
         super(UpsamplingBlock, self).__init__()
-        self.upsamplingLayer = nn.Upsample(scale_factor=2, mode='bilinear') # This could be replaced with deconvolution
-        self.conv = nn.Conv2d(channels_in, channels_out, kernel_size=1, stride= 1) # Possibly more conv layers
+        self.upsamplingLayer = nn.ConvTranspose2d(channels_in, channels_out, kernel_size=2, stride=2)
+        self.relu = nn.ReLU()
+        #self.conv = nn.Conv2d(channels_in, channels_out, kernel_size=1, stride= 1) # Possibly more conv layers
         self.batchNorm = nn.BatchNorm2d(channels_out)
 
     def forward(self, x, skip_input):
         x = self.upsamplingLayer(x)
         if (x!=x).data.any():
             print('nan in upsampling layer')
-        x = self.conv(x)
-        if (x!=x).data.any():
-            print('nan in upsampling block:conv layer')
-        x = x + skip_input
-        #x = self.batchNorm(x)
+        x = self.relu(x)
+        if (x != x).data.any():
+            print('nan in relu layer')
+        #x = self.conv(x)
         #if (x!=x).data.any():
-            #print('nan in batch norm layer')
+            #print('nan in upsampling block:conv layer')
+        x = x + skip_input
+        x = self.batchNorm(x)
+        if (x!=x).data.any():
+            print('nan in batch norm layer')
 
         return x

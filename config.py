@@ -24,7 +24,7 @@ processed_val_root = 'E:\\Almog\\DLProjectData\\coco\\processed_val2017\\'
 processed_train_root = 'E:\\Almog\\DLProjectData\\coco\\processed_train2017\\'
 
 # Checkpoints and logs directory
-chkpts_dir = 'C:\\Almog\\DLProject\\instance_segmentation\\FeatureExtractor_checkpoints\\'
+chkpts_dir = 'C:\\Almog\\2018a\\DLProject\\instance_segmentation\\FeatureExtractor_checkpoints\\'
 
 
 def config_experiment(name, resume=True, lr=0.001):
