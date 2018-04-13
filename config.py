@@ -9,6 +9,7 @@ embedding_dim = 64
 float_type = torch.FloatTensor
 double_type = torch.DoubleTensor
 int_type = torch.IntTensor
+long_type = torch.LongTensor
 
 # Data root
 data_root = 'E:\\Almog\\DLProjectData\\coco\\'
@@ -19,9 +20,17 @@ validation_images_path = 'E:\Almog\DLProjectData\coco\\val2017'
 train_annotations = 'E:\Almog\DLProjectData\coco\\annotations_trainval2017\\annotations\\instances_train2017.json'
 val_annotations = 'E:\Almog\DLProjectData\coco\\annotations_trainval2017\\annotations\\instances_val2017.json'
 
-# Processed Images+Labels folders
+# Processed Images+Labels folders COCO
 processed_val_root = 'E:\\Almog\\DLProjectData\\coco\\processed_val2017\\'
 processed_train_root = 'E:\\Almog\\DLProjectData\\coco\\processed_train2017\\'
+
+# Processed Images+Labels folders VOC
+voc_processed_images = 'E:\Almog\DLProjectData\VOC2012\processedImages\\'
+voc_processed_labels = 'E:\Almog\DLProjectData\VOC2012\processedLabels\\'
+
+voc_train_ids = 'E:\Almog\DLProjectData\VOC2012\ImageSets\Segmentation\\train.txt'
+voc_val_ids = 'E:\Almog\DLProjectData\VOC2012\ImageSets\Segmentation\\val.txt'
+
 
 # Checkpoints and logs directory
 chkpts_dir = 'C:\\Almog\\2018a\\DLProject\\instance_segmentation\\FeatureExtractor_checkpoints\\'
@@ -47,7 +56,8 @@ def config_experiment(name, resume=True, lr=0.001):
     exp['optimizer_state_dict'] = torch.optim.Adam(model.parameters(), lr).state_dict()
     exp['epoch'] = 0
     exp['best_loss'] = None
-    exp['loss_history'] = []
+    exp['train_loss'] = []
+    exp['val_loss'] = []
 
     return exp, logger
 
@@ -59,7 +69,7 @@ def save_experiment(exp, name, isBest=False):
 
 
 def config_logger(current_exp):
-    logger = logging.getLogger()
+    logger = logging.getLogger(current_exp)
     logger.setLevel(logging.DEBUG)
     handler = logging.StreamHandler()
     handler.setLevel(logging.DEBUG)

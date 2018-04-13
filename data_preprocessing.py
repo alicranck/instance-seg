@@ -106,7 +106,7 @@ def collate_fn(batch):
     return batch
 
 
-def get_dataloader(data_path, anns_path):
+def get_dataloader(data_path, anns_path, batch_size):
 
     image_transforms = transforms.Compose(
                             [transforms.Scale(224, Image.BILINEAR),

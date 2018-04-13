@@ -21,7 +21,7 @@ def reduce(features):
     return pca_results
 
 
-def visualize(inputs, reduced_features, name, current_batch):
+def visualize(inputs, reduced_features, name, current_epoch):
 
     # Save original image
     os.makedirs('visualizations/' + name, exist_ok=True)
@@ -29,7 +29,7 @@ def visualize(inputs, reduced_features, name, current_batch):
     max_val = np.amax(np.absolute(img_data))
     img_data = (img_data/max_val + 1) / 2  # normalize img
     plt.imshow(img_data)  #convert to cpu on cloud
-    plt.savefig('visualizations/' + name + '/batch' + str(current_batch) + 'img.png')
+    plt.savefig('visualizations/' + name + '/epoch' + str(current_epoch) + 'img.png')
     plt.close()
 
     # Embed predicted features to 3d and visualize
@@ -38,7 +38,8 @@ def visualize(inputs, reduced_features, name, current_batch):
     tsne_results = np.reshape(tsne_results,[112,112,3])
     tsne_results = (tsne_results/np.amax(np.absolute(tsne_results)) + 1) / 2
     plt.imshow(tsne_results)
-    plt.savefig('visualizations/'+name+'/batch'+str(current_batch)+'.png')
+    plt.savefig('visualizations/'+name+'/epoch'+str(current_epoch)+'.png')
+    plt.close()
     return
 
 
