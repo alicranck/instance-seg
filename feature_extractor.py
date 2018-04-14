@@ -13,6 +13,9 @@ class FeatureExtractor(nn.Module):
         self.upsample3 = UpsamplingBlock(128, 64)
         self.upsample4 = UpsamplingBlock(64, 64)
         self.upsample5 = UpsamplingBlock(64, 64, skip=False)
+        self.finalConv = nn.Sequential(nn.Conv2d(64, 32, 1, 1),
+                                       nn.ReLU(),
+                                       nn.BatchNorm2d(32))
 
     def forward(self, x):
         outputs = {}
@@ -44,19 +47,31 @@ class FeatureExtractor(nn.Module):
 class UpsamplingBlock(nn.Module):
     def __init__(self, channels_in, channels_out, skip=True):
         super(UpsamplingBlock, self).__init__()
-        self.upsamplingLayer = nn.ConvTranspose2d(channels_in, channels_out, kernel_size=2, stride=2)
+        #self.upsamplingLayer = nn.ConvTranspose2d(channels_in, channels_out, kernel_size=2, stride=2)
+        self.upsamplingLayer = nn.Sequential(nn.Upsample(scale_factor=2),
+                                             nn.Conv2d(channels_in, channels_out, kernel_size=1, stride=1),
+                                             nn.ReLU(),
+                                             nn.BatchNorm2d(channels_out))
+
         if skip:
-            self.conv = nn.Conv2d(2*channels_out, channels_out, kernel_size=1, stride=1)  # Possibly more conv layers
+            self.conv1 = nn.Conv2d(2*channels_out, channels_out, kernel_size=3, stride=1, padding=1)
         else:
-            self.conv = nn.Conv2d(channels_out, channels_out, kernel_size=1, stride=1)
-        self.relu1 = nn.ReLU()
-        self.batchNorm = nn.BatchNorm2d(channels_out)
+            self.conv1 = nn.Conv2d(channels_out, channels_out, kernel_size=3, stride=1, padding=1)
+
+        self.conv2 = nn.Conv2d(channels_out, channels_out, kernel_size=3, stride=1, padding=1)
+
+        self.convLayer1 = nn.Sequential(self.conv1,
+                                        nn.ReLU(),
+                                        nn.BatchNorm2d(channels_out))
+
+        self.convLayer2 = nn.Sequential(self.conv2,
+                                        nn.ReLU(),
+                                        nn.BatchNorm2d(channels_out))
 
     def forward(self, x, skip_input=None):
         x = self.upsamplingLayer(x)
         if skip_input is not None:
             x = torch.cat((x, skip_input), 1)
-        x = self.conv(x)
-        x = self.relu1(x)
-        x = self.batchNorm(x)
+        x = self.convLayer1(x)
+        x = self.convLayer2(x)
         return x
