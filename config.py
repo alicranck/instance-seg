@@ -4,7 +4,7 @@ import torch
 import numpy as np
 from feature_extractor import *
 
-embedding_dim = 64
+embedding_dim = 32
 
 float_type = torch.FloatTensor
 double_type = torch.DoubleTensor

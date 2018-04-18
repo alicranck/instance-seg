@@ -6,7 +6,7 @@ from config import *
 eps = 0.0000000000001
 
 dv = 0.0
-dd = 1.5
+dd = 2
 
 gamma = 0.001
 
@@ -168,6 +168,8 @@ def contrasive_loss(features, label, k=0):
 
     # calculate intra-cluster loss
     for instance in instances:
+        if instance==1.0:   # ignore borders
+            continue
 
         # collect all feature vector of a certain instance
         locations = Variable(torch.LongTensor(np.where(label == instance)[0]).type(long_type))
@@ -201,6 +203,7 @@ def contrasive_loss(features, label, k=0):
         #hinge_cond = (2*dd-dists>0).type(double_type)
         #hinge_dist = hinge_cond*(2*dd-dists)
         #dist_loss = dist_loss + torch.sum(torch.pow(hinge_dist, 2))/(num_clusters-1)
+    print(dist_loss.data[0])
 
     # regularization term
     reg_loss = torch.sum(torch.norm(means, 2, 1))

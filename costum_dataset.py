@@ -1,5 +1,6 @@
 from torch.utils.data import Dataset
 import PIL.Image as im
+from scipy import misc
 import numpy as np
 from torchvision import transforms
 import torch
@@ -49,11 +50,9 @@ class voc224Dataset(Dataset):
     def __getitem__(self, item):
         id = self.ids[item]
         img = im.open(self.data_path+id+'.jpg')
-        label = im.open(self.labels_path+id+'.png')
+        label = misc.imread(self.labels_path+id+'.png')
 
         img = self.toTensor(img)
         img = self.normalize(img)
-
-        label = self.toTensor(label)
 
         return {'image':img, 'label':label}

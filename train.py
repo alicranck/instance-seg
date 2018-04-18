@@ -1,11 +1,11 @@
 from torch.autograd import Variable
 import torch.autograd
 from torchvision import datasets
-from visualization import *
 from config import *
 from costum_dataset import *
 from torch.utils.data import DataLoader
 from loss import CostumeLoss, sample_loss
+from evaluate import *
 #from logger import Logger
 import logging
 
@@ -95,7 +95,7 @@ for i in range(current_epoch, max_epoch_num):
     for batch_num, batch in enumerate(train_dataloader):
 
         inputs = Variable(batch['image'].type(float_type))
-        labels = batch['label'].numpy()
+        labels = batch['label']
         features = model(inputs)
         optimizer.zero_grad()
         current_loss = loss_fn(features,labels, k)
@@ -148,7 +148,7 @@ for i in range(current_epoch, max_epoch_num):
 
     if VISUALIZE:
         features = model(inputs)
-        reduced_features = reduce(features.data)
+        reduced_features = reduce(features.data, 10)
         visualize(inputs, reduced_features, current_experiment, i)
 
     model.train()

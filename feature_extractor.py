@@ -16,6 +16,7 @@ class FeatureExtractor(nn.Module):
         self.finalConv = nn.Sequential(nn.Conv2d(64, 32, 1, 1),
                                        nn.ReLU(),
                                        nn.BatchNorm2d(32))
+        self.contextLayer = ContextModule(64,32)
 
     def forward(self, x):
         outputs = {}
@@ -34,12 +35,17 @@ class FeatureExtractor(nn.Module):
         features = self.upsample3(features, outputs['layer1'])
         if (features!=features).data.any():
             print("nan in upsampling layer 3")
+
+        #features = self.contextLayer(features)
+
         features = self.upsample4(features, outputs['relu'])
         if (features!=features).data.any():
             print("nan in upsampling layer 4")
         features = self.upsample5(features)
         if (features!=features).data.any():
             print("nan in upsampling layer 5")
+
+        features = self.finalConv(features)
 
         return features
 
@@ -74,4 +80,26 @@ class UpsamplingBlock(nn.Module):
             x = torch.cat((x, skip_input), 1)
         x = self.convLayer1(x)
         x = self.convLayer2(x)
+        return x
+
+
+class ContextModule(nn.Module):
+    '''
+    this is essentialy a bi-LSTM that process the feature vectors.
+    It recieves a (batch*channels*height*width) tensor and outputs a tensor
+    of the same size after the rnn pass.
+    '''
+    def __init__(self, input_size, hidden_size):
+        super(ContextModule, self).__init__()
+        self.hidden_size = hidden_size
+        self.lstm = nn.LSTM(input_size=input_size, hidden_size=hidden_size, batch_first=True,
+                            bidirectional=True)
+
+    def forward(self, x):
+        x = x.permute(0,2,3,1).contiguous()
+        bs, h, w, f = x.size()
+        x = x.view(bs, h*w, f)
+        x, _ = self.lstm(x)
+        x = x.contiguous().view(bs, h, w, 2*self.hidden_size)
+        x = x.permute(0,3,1,2)
         return x
