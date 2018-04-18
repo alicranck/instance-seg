@@ -50,8 +50,7 @@ class voc224Dataset(Dataset):
     def __getitem__(self, item):
         id = self.ids[item]
         img = im.open(self.data_path+id+'.jpg')
-        label = misc.imread(self.labels_path+id+'.png')
-
+        label = np.asarray(im.open(self.labels_path+id+'.png'))
         img = self.toTensor(img)
         img = self.normalize(img)
 
