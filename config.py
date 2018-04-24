@@ -36,7 +36,7 @@ voc_val_ids = 'E:\Almog\DLProjectData\VOC2012\ImageSets\Segmentation\\val.txt'
 chkpts_dir = 'C:\\Almog\\2018a\\DLProject\\instance_segmentation\\FeatureExtractor_checkpoints\\'
 
 
-def config_experiment(name, resume=True, lr=0.001):
+def config_experiment(name, resume=True):
 
     exp = {}
     os.makedirs(chkpts_dir+name, exist_ok=True)
@@ -53,7 +53,6 @@ def config_experiment(name, resume=True, lr=0.001):
 
     model = FeatureExtractor()
     exp['model_state_dict'] = model.state_dict()
-    exp['optimizer_state_dict'] = torch.optim.Adam(model.parameters(), lr).state_dict()
     exp['epoch'] = 0
     exp['best_loss'] = None
     exp['train_loss'] = []

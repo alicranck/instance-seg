@@ -165,10 +165,10 @@ def contrasive_loss(features, label, k=0):
     means = []
     var_loss = Variable(torch.Tensor([0]).type(double_type))
     dist_loss = Variable(torch.Tensor([0]).type(double_type))
-
     # calculate intra-cluster loss
     for instance in instances:
-        if instance==1.0:   # ignore borders
+        if instance==255:   # ignore borders
+            print(instance)
             continue
 
         # collect all feature vector of a certain instance
@@ -203,12 +203,13 @@ def contrasive_loss(features, label, k=0):
         #hinge_cond = (2*dd-dists>0).type(double_type)
         #hinge_dist = hinge_cond*(2*dd-dists)
         #dist_loss = dist_loss + torch.sum(torch.pow(hinge_dist, 2))/(num_clusters-1)
-    print(dist_loss.data[0])
+    print('dist loss: ' + str(dist_loss.data[0]))
+    print('var loss: ' + str(var_loss.data[0]))
 
     # regularization term
     reg_loss = torch.sum(torch.norm(means, 2, 1))
 
-    total_loss = (var_loss + dist_loss + reg_loss*gamma) / num_clusters
+    total_loss = (var_loss + dist_loss) / num_clusters
 
     return total_loss.type(float_type)
 

@@ -8,6 +8,8 @@ class FeatureExtractor(nn.Module):
     def __init__(self):
         super(FeatureExtractor, self).__init__()
         self.resnet = models.resnet18(True)
+        for param in self.resnet.parameters():
+            param.requires_grad = False
         self.upsample1 = UpsamplingBlock(512, 256)
         self.upsample2 = UpsamplingBlock(256, 128)
         self.upsample3 = UpsamplingBlock(128, 64)

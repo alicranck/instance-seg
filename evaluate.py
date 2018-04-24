@@ -1,6 +1,7 @@
 import numpy as np
-import torch
-from sklearn.cluster import MeanShift, DBSCAN
+from torch.autograd import Variable
+from scipy.misc import imsave
+from scipy.spatial.distance import dice
 import hdbscan
 from sklearn.decomposition import PCA
 from sklearn.manifold import TSNE
@@ -41,17 +42,14 @@ def cluster_features(features):
     :param features: (h*w,c) array of h*w d-dim features extracted from the photo.
     :return: returns a (h*w,1) array with the cluster indices.
     '''
-    # Define MeanShift instance and cluster features
-    #ms = MeanShift(bandwidth=0.5, cluster_all=False)
-    #ms = DBSCAN(eps=0.15, min_samples=50)
-    ms = hdbscan.HDBSCAN(algorithm='boruvka_kdtree',min_cluster_size=50)
-    labels = ms.fit_predict(features)
-    instances, counts = np.unique(labels, return_counts=True)
-
+    # Define DBSCAN instance and cluster features
+    dbscan = hdbscan.HDBSCAN(algorithm='boruvka_kdtree',min_cluster_size=100)
+    labels = dbscan.fit_predict(features)
+    labels[np.where(labels==-1)] = 0
     # suppress small clusters
-    for i, count in enumerate(counts):
-        if count<100 or instances[i]==-1:
-            labels = np.where(labels==instances[i], 0, labels)
+    #for i, count in enumerate(counts):
+        #if count<100 or instances[i]==-1:
+            #labels = np.where(labels==instances[i], 0, labels)
 
     return labels
 
@@ -87,20 +85,85 @@ def visualize(input, label, features, name, id):
     img_data = np.transpose(input, [1, 2, 0])
     max_val = np.amax(np.absolute(img_data))
     img_data = (img_data/max_val + 1) / 2  # normalize img
-    plt.imshow(img_data)  #convert to cpu on cloud
-    plt.savefig('visualizations/' + name + '/segmentations/' + str(id) + 'img.png')
-    plt.close()
+    imsave('visualizations/'+name+'/segmentations/' + str(id) + 'img.jpg', img_data)
 
     # Save ground truth
     if len(label.shape)==3:
         label = np.squeeze(label)
-    plt.imshow(label)
-    plt.savefig('visualizations/'+name+'/segmentations/' + str(id) + 'gt.png')
-    plt.close()
+    label[np.where(label==255)] = 0
+    label = label.astype(np.int32)
+    imsave('visualizations/'+name+'/segmentations/' + str(id) + 'gt.png', label)
 
     # reduce features dimensionality and predict label
-    predicted_label = predict_label(features, downsample_factor=2)
-    plt.imshow(predicted_label)
-    plt.savefig('visualizations/'+name+'/segmentations/' + str(id) + 'seg.png')
-    plt.close()
+    predicted_label = predict_label(features, downsample_factor=1)
+    imsave('visualizations/'+name+'/segmentations/' + str(id) + 'seg.png', predicted_label)
+
     return
+
+
+def best_symmetric_dice(pred, gt):
+    score1 = dice_score(pred, gt)
+    score2 = dice_score(gt, pred)
+    return max([score1, score2])
+
+
+def dice_score(x, y):
+    '''
+    computes DICE of a predicted label and ground-truth segmentation. this is done for
+    objects with no regard to classes.
+    :param x: (1, h, w) or (h, w) ndarray
+    :param y: (1, h, w) or (h, w) ndarrayruth segmentation segmentation
+    :return: DICE score
+    '''
+
+    x_instances = np.unique(x)
+    y_instances = np.unique(y)
+
+    total_score = 0
+
+    for x_instance in x_instances:
+        max_val = 0
+        for y_instance in y_instances:
+            x_mask = np.where(x==x_instance, 1, 0)
+            y_mask = np.where(y==y_instance, 1, 0)
+
+            overlap = np.sum(np.logical_and(x_mask, y_mask))
+            score = 2.0*overlap / np.sum(x_mask+y_mask)
+
+            max_val = max([max_val, score])
+
+        print(max_val)
+        total_score += max_val
+
+    return total_score/len(x_instances)
+
+
+def evaluate_model(model, dataloader, loss_fn):
+    '''
+    evaluates average loss of a model on a given loss function, and average dice distance of
+    some segmentations.
+    :param model: the model to use for evaluation
+    :param dataloader: a dataloader with the validation set
+    :param loss_fn:
+    :return: average loss, average dice distance
+    '''
+    running_loss = 0
+    running_dice = 0
+    for i, batch in enumerate(dataloader):
+        inputs = Variable(batch['image'].type(float_type), volatile=True)
+        labels = batch['label'].numpy()
+
+        features = model(inputs)
+        current_loss = loss_fn(features, labels)
+
+        np_features = features.data.cpu().numpy()
+        pred = predict_label(np_features[0], downsample_factor=2)
+
+        dice_dist = best_symmetric_dice(pred, labels[0])
+        running_loss += current_loss.data.numpy()
+        running_dice += dice_dist
+
+    val_loss = running_loss / i
+    average_dice = running_dice / i
+
+    return val_loss, average_dice
