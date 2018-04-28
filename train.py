@@ -73,9 +73,9 @@ def run():
             current_loss.backward()
             optimizer.step()
 
-            np_loss = current_loss.data.numpy()
+            np_loss = current_loss.data[0]
             running_loss += np_loss
-            exp_logger.info('epoch: '+ str(i) + ', batch number: '+str(batch_num)+', loss: '+str(np_loss[0]))
+            exp_logger.info('epoch: ' + str(i) + ', batch number: '+str(batch_num)+', loss: '+str(np_loss))
 
         train_loss = running_loss/batch_num
 
