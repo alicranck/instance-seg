@@ -30,9 +30,37 @@ def predict_label(features, downsample_factor=1):
     flat_features = np.reshape(features, [h*w,c])
     reduced_features = reduce(flat_features, 10)  # reduce dimension using PCA
     cluster_mask = cluster_features(reduced_features)
+    #cluster_mask = determine_background(flat_features, cluster_mask)
     predicted_label = np.reshape(cluster_mask, [h,w])
     predicted_label = rescale(predicted_label, order=0, scale=downsample_factor, preserve_range=True)
     return np.asarray(predicted_label, np.int32)
+
+
+def determine_background(features, cluster_mask):
+    '''
+    this function labels the cluster whose mean is closest to 0 as background
+    :param features: a (n, d) ndarray of embeddings
+    :param cluster_mask: a (n, 1) vector of cluster labels
+    :return: an  (n, 1) vector of cluster labels, when the cluster with the smallest mean is labeled 0.
+    '''
+    min_mean = None
+    background_label = 0
+    cluster_mask += 1
+    cluster_labels = np.unique(cluster_mask)
+
+    for label in cluster_labels:
+        if label==0:
+            continue
+        label_features = features[cluster_mask==label]
+        cluster_mean_norm = np.linalg.norm(np.mean(label_features, 0), 2)
+
+        if min_mean is None or cluster_mean_norm < min_norm:
+            min_norm = cluster_mean_norm
+            background_label = label
+
+    cluster_mask[cluster_mask==background_label] = 0
+
+    return cluster_mask
 
 
 def cluster_features(features):
@@ -61,7 +89,6 @@ def reduce(features, dimension=10):
     :param dimension: the number of output channels
     :return: a (n, dimension) numpy array containing the reduced data.
     '''
-    #features = skimage.measure.block_reduce(features, (downsample,downsample,1), np.max) #reduce resolution for performance
     pca = PCA(n_components=dimension)
     pca_results = pca.fit_transform(features)
     return pca_results
@@ -153,8 +180,8 @@ def evaluate_model(model, dataloader, loss_fn, name, epoch):
     '''
     running_loss = 0
     running_dice = 0
-    dice_dist = 0
     for i, batch in enumerate(dataloader):
+        dice_dist = 0
         inputs = Variable(batch['image'].type(float_type), volatile=True)
         labels = batch['label'].cpu().numpy()
 

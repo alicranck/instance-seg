@@ -42,6 +42,7 @@ processed_train_root = 'E:\\Almog\\DLProjectData\\coco\\processed_train2017\\'
 # Processed Images+Labels folders VOC
 voc_processed_images = 'E:\Almog\DLProjectData\VOC2012\processedImages\\'
 voc_processed_labels = 'E:\Almog\DLProjectData\VOC2012\processedLabels\\'
+voc_processed_class_labels = 'E:\Almog\DLProjectData\VOC2012\processedClassLabels\\'
 
 voc_train_ids = 'E:\Almog\DLProjectData\VOC2012\ImageSets\Segmentation\\train.txt'
 voc_val_ids = 'E:\Almog\DLProjectData\VOC2012\ImageSets\Segmentation\\val.txt'
