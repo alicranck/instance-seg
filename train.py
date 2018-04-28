@@ -1,31 +1,13 @@
 from torch.autograd import Variable
 import torch.autograd
-from torchvision import datasets
 from config import *
 from costum_dataset import *
 from torch.utils.data import DataLoader
 from loss import CostumeLoss, sample_loss
 from evaluate import *
-#from logger import Logger
-import logging
 
-VISUALIZE = True
 
-if torch.cuda.is_available():
-    float_type = torch.cuda.FloatTensor
-    double_type = torch.cuda.DoubleTensor
-    int_type = torch.cuda.IntTensor
-    long_type = torch.cuda.LongTensor
-
-# Hyper parameters
-k = 12
-batch_size = 2
-learning_rate = 0.001
-lr_decay = 0.98
-max_epoch_num = 100
-context = False
-current_experiment = 'test_03'
-current_data_root = processed_train_root
+current_experiment = 'test_04'
 
 # Paths to data, labels
 data_path = voc_processed_images
@@ -43,7 +25,6 @@ def run():
 
     # Set up an experiment
     experiment, exp_logger = config_experiment(current_experiment, resume=True, context=context)
-    #tfLogger = Logger('./tfLogs')
 
     model = FeatureExtractor(context)
     model.resnet.register_backward_hook(printgradnorm)
@@ -61,8 +42,10 @@ def run():
     model.load_state_dict(experiment['model_state_dict'])
     current_epoch = experiment['epoch']
     best_loss = experiment['best_loss']
+    best_dice = experiment['best_dice']
     train_loss_history = experiment['train_loss']
     val_loss_history = experiment['val_loss']
+    dice_history = experiment['dice']
 
     loss_fn = CostumeLoss()
     loss_fn.register_backward_hook(printgradnorm)
@@ -91,38 +74,36 @@ def run():
         train_loss = running_loss/batch_num
 
         # Evaluate model
-        model.eval()
-        val_loss, average_dice = evaluate_model(model, val_dataloader, loss_fn)
+        val_loss, average_dice = evaluate_model(model, val_dataloader, loss_fn, current_experiment, i)
 
-        if best_loss is None or val_loss < best_loss:
-            best_loss = running_loss
+        if best_dice is None or average_dice < best_dice:
+            best_dice = average_dice
             isBest = True
         else:
             isBest = False
 
         exp_logger.info('Saving checkpoint. Average validation loss is: ' + str(val_loss) +
-                        'Average DICE is : ' + str(average_dice))
+                        ' Average DICE is : ' + str(average_dice))
         train_loss_history.append(train_loss)
         val_loss_history.append(val_loss)
+        dice_history.append(average_dice)
 
         save_experiment({'model_state_dict': model.state_dict(),
                          'epoch': i + 1,
                          'best_loss': best_loss,
+                         'best_dice': best_dice,
                          'train_loss': train_loss_history,
-                         'val_loss': val_loss_history}, current_experiment, isBest)
+                         'val_loss': val_loss_history,
+                         'dice': dice_history}, current_experiment, isBest)
 
         plt.plot(train_loss_history, 'r')
         plt.plot(val_loss_history, 'b')
         os.makedirs('visualizations/' + current_experiment, exist_ok=True)
         plt.savefig('visualizations/' + current_experiment + '/loss.png')
         plt.close()
-
-        if VISUALIZE:
-            features = model(inputs)
-            reduced_features = reduce(features.data, 10)
-            visualize(inputs, reduced_features, current_experiment, i)
-
-        model.train()
+        plt.plot(dice_history)
+        plt.savefig('visualizations/' + current_experiment + '/dice.png')
+        plt.close()
 
 
 def printgradnorm(self, grad_input, grad_output):
