@@ -6,7 +6,7 @@ import hdbscan
 from sklearn.decomposition import PCA
 from sklearn.manifold import TSNE
 import matplotlib
-#matplotlib.use('Agg')
+matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 import skimage.measure
 from skimage.transform import rescale
@@ -64,7 +64,6 @@ def reduce(features, dimension=10):
     #features = skimage.measure.block_reduce(features, (downsample,downsample,1), np.max) #reduce resolution for performance
     pca = PCA(n_components=dimension)
     pca_results = pca.fit_transform(features)
-    print(np.sum(pca.explained_variance_ratio_))
     return pca_results
 
 
@@ -95,8 +94,14 @@ def visualize(input, label, features, name, id):
     imsave('visualizations/'+name+'/segmentations/' + str(id) + 'gt.png', label)
 
     # reduce features dimensionality and predict label
-    predicted_label = predict_label(features, downsample_factor=1)
+    predicted_label = predict_label(features, downsample_factor=2)
     imsave('visualizations/'+name+'/segmentations/' + str(id) + 'seg.png', predicted_label)
+
+    # draw predicted seg on img and save
+    plt.imshow(img_data)
+    plt.imshow(predicted_label, alpha=0.5)
+    plt.savefig('visualizations/'+name+'/segmentations/' + str(id) + 'vis.png')
+    plt.close()
 
     return
 
@@ -132,13 +137,12 @@ def dice_score(x, y):
 
             max_val = max([max_val, score])
 
-        print(max_val)
         total_score += max_val
 
     return total_score/len(x_instances)
 
 
-def evaluate_model(model, dataloader, loss_fn):
+def evaluate_model(model, dataloader, loss_fn, name, epoch):
     '''
     evaluates average loss of a model on a given loss function, and average dice distance of
     some segmentations.
@@ -151,7 +155,7 @@ def evaluate_model(model, dataloader, loss_fn):
     running_dice = 0
     for i, batch in enumerate(dataloader):
         inputs = Variable(batch['image'].type(float_type), volatile=True)
-        labels = batch['label'].numpy()
+        labels = batch['label'].cpu().numpy()
 
         features = model(inputs)
         current_loss = loss_fn(features, labels)
@@ -160,10 +164,12 @@ def evaluate_model(model, dataloader, loss_fn):
         pred = predict_label(np_features[0], downsample_factor=2)
 
         dice_dist = best_symmetric_dice(pred, labels[0])
-        running_loss += current_loss.data.numpy()
+        running_loss += current_loss.data.cpu().numpy()[0]
         running_dice += dice_dist
 
-    val_loss = running_loss / i
-    average_dice = running_dice / i
+    val_loss = running_loss / (i+1)
+    average_dice = running_dice / (i+1)
+
+    visualize(inputs.data[0].cpu().numpy(), labels[0], np_features[0], name, epoch)
 
     return val_loss, average_dice

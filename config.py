@@ -4,14 +4,25 @@ import torch
 import numpy as np
 from feature_extractor import *
 
+# Hyper parameters
+k = 12
 embedding_dim = 32
-classifier_hidden = 128
-num_classes = 20
+batch_size = 2
+learning_rate = 0.001
+lr_decay = 0.98
+max_epoch_num = 100
+context = False
 
-float_type = torch.FloatTensor
-double_type = torch.DoubleTensor
-int_type = torch.IntTensor
-long_type = torch.LongTensor
+if torch.cuda.is_available():
+    float_type = torch.cuda.FloatTensor
+    double_type = torch.cuda.DoubleTensor
+    int_type = torch.cuda.IntTensor
+    long_type = torch.cuda.LongTensor
+else:
+    float_type = torch.FloatTensor
+    double_type = torch.DoubleTensor
+    int_type = torch.IntTensor
+    long_type = torch.LongTensor
 
 # Data root
 data_root = 'E:\\Almog\\DLProjectData\\coco\\'
@@ -53,14 +64,14 @@ def config_experiment(name, resume=True, context=False):
         except:
             logger.warning('checkpoint does not exist. creating new experiment')
 
-    fe = FeatureExtractor(embedding_dim, context=context)
-    classifier = ClassifyingModule(embedding_dim, classifier_hidden, num_classes)
-    exp['fe_state_dict'] = fe.state_dict()
-    exp['classifier_state_dict'] = classifier.state_dict()
+    model = FeatureExtractor(context=context)
+    exp['model_state_dict'] = model.state_dict()
     exp['epoch'] = 0
     exp['best_loss'] = None
+    exp['best_dice'] = None
     exp['train_loss'] = []
     exp['val_loss'] = []
+    exp['dice'] = []
 
     return exp, logger
 

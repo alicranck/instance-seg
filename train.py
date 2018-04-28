@@ -1,31 +1,13 @@
 from torch.autograd import Variable
 import torch.autograd
-from torchvision import datasets
 from config import *
 from costum_dataset import *
 from torch.utils.data import DataLoader
 from loss import CostumeLoss, sample_loss
 from evaluate import *
-#from logger import Logger
-import logging
 
-VISUALIZE = True
 
-if torch.cuda.is_available():
-    float_type = torch.cuda.FloatTensor
-    double_type = torch.cuda.DoubleTensor
-    int_type = torch.cuda.IntTensor
-    long_type = torch.cuda.LongTensor
-
-# Hyper parameters
-k = 12
-batch_size = 2
-learning_rate = 0.001
-lr_decay = 0.98
-max_epoch_num = 100
-context = False
-current_experiment = 'test_03'
-current_data_root = processed_train_root
+current_experiment = 'test_04'
 
 # Paths to data, labels
 data_path = voc_processed_images
@@ -44,11 +26,9 @@ def run():
     # Set up an experiment
     experiment, exp_logger = config_experiment(current_experiment, resume=True, context=context)
 
-    feature_extractor = FeatureExtractor(embedding_dim, context)
-    classifier = ClassifyingModule(embedding_dim, classifier_hidden, num_classes)
-
-    feature_extractor.resnet.register_backward_hook(printgradnorm)
-    for block in feature_extractor.children():
+    model = FeatureExtractor(context)
+    model.resnet.register_backward_hook(printgradnorm)
+    for block in model.children():
         if block.__class__.__name__=='UpsamplingBlock':
             for child in block.children():
                 child.register_backward_hook(printgradnorm)
@@ -57,19 +37,20 @@ def run():
 
     if torch.cuda.is_available():
         print("CUDA")
-        feature_extractor.cuda()
+        model.cuda()
 
-    feature_extractor.load_state_dict(experiment['fe_state_dict'])
-    classifier.load_state_dict(experiment['classifier_state_dict'])
+    model.load_state_dict(experiment['model_state_dict'])
     current_epoch = experiment['epoch']
     best_loss = experiment['best_loss']
+    best_dice = experiment['best_dice']
     train_loss_history = experiment['train_loss']
     val_loss_history = experiment['val_loss']
+    dice_history = experiment['dice']
 
     loss_fn = CostumeLoss()
     loss_fn.register_backward_hook(printgradnorm)
 
-    optimizer = torch.optim.Adam(filter(lambda p:p.requires_grad, feature_extractor.parameters()), learning_rate)
+    optimizer = torch.optim.Adam(filter(lambda p:p.requires_grad, model.parameters()), learning_rate)
 
     exp_logger.info('training started/resumed at epoch ' + str(current_epoch))
 
@@ -79,7 +60,7 @@ def run():
         for batch_num, batch in enumerate(train_dataloader):
             inputs = Variable(batch['image'].type(float_type))
             labels = batch['label'].cpu().numpy()
-            features = feature_extractor(inputs)
+            features = model(inputs)
 
             optimizer.zero_grad()
             current_loss = loss_fn(features,labels, k)
@@ -93,38 +74,36 @@ def run():
         train_loss = running_loss/batch_num
 
         # Evaluate model
-        feature_extractor.eval()
-        val_loss, average_dice = evaluate_model(feature_extractor, val_dataloader, loss_fn)
+        val_loss, average_dice = evaluate_model(model, val_dataloader, loss_fn, current_experiment, i)
 
-        if best_loss is None or val_loss < best_loss:
-            best_loss = running_loss
+        if best_dice is None or average_dice < best_dice:
+            best_dice = average_dice
             isBest = True
         else:
             isBest = False
 
         exp_logger.info('Saving checkpoint. Average validation loss is: ' + str(val_loss) +
-                        'Average DICE is : ' + str(average_dice))
+                        ' Average DICE is : ' + str(average_dice))
         train_loss_history.append(train_loss)
         val_loss_history.append(val_loss)
+        dice_history.append(average_dice)
 
-        save_experiment({'model_state_dict': feature_extractor.state_dict(),
+        save_experiment({'model_state_dict': model.state_dict(),
                          'epoch': i + 1,
                          'best_loss': best_loss,
+                         'best_dice': best_dice,
                          'train_loss': train_loss_history,
-                         'val_loss': val_loss_history}, current_experiment, isBest)
+                         'val_loss': val_loss_history,
+                         'dice': dice_history}, current_experiment, isBest)
 
         plt.plot(train_loss_history, 'r')
         plt.plot(val_loss_history, 'b')
         os.makedirs('visualizations/' + current_experiment, exist_ok=True)
         plt.savefig('visualizations/' + current_experiment + '/loss.png')
         plt.close()
-
-        if VISUALIZE:
-            features = feature_extractor(inputs)
-            reduced_features = reduce(features.data, 10)
-            visualize(inputs, reduced_features, current_experiment, i)
-
-        feature_extractor.train()
+        plt.plot(dice_history)
+        plt.savefig('visualizations/' + current_experiment + '/dice.png')
+        plt.close()
 
 
 def printgradnorm(self, grad_input, grad_output):

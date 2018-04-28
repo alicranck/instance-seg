@@ -25,7 +25,7 @@ class CostumeLoss(torch.nn.Module):
         batch_size = features_batch.size()[0]
         for i in range(batch_size):
             running_loss += self.loss(features_batch[i], labels_batch[i], k)
-            if np.isnan(running_loss.data.numpy()):
+            if np.isnan(running_loss.data.cpu().numpy()):
                 print("------------------------------------------------------------------------------------")
                 break
         return running_loss/batch_size
