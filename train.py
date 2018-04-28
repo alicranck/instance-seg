@@ -26,20 +26,26 @@ def run():
     # Set up an experiment
     experiment, exp_logger = config_experiment(current_experiment, resume=True, context=context)
 
-    model = FeatureExtractor(context)
-    model.resnet.register_backward_hook(printgradnorm)
-    for block in model.children():
+    fe = FeatureExtractor(context)
+    classifier = ClassifyingModule(embedding_dim, classifier_hidden, num_classes)
+
+    fe.resnet.register_backward_hook(printgradnorm)
+    for block in fe.children():
         if block.__class__.__name__=='UpsamplingBlock':
             for child in block.children():
                 child.register_backward_hook(printgradnorm)
             continue
         block.register_backward_hook(printgradnorm)
 
+    classifier.register_backward_hook(printgradnorm)
+
     if torch.cuda.is_available():
         print("CUDA")
-        model.cuda()
+        fe.cuda()
+        classifier.cuda()
 
-    model.load_state_dict(experiment['model_state_dict'])
+    fe.load_state_dict(experiment['fe_state_dict'])
+    classifier.load_state_dict(experiment['classifier_state_dict'])
     current_epoch = experiment['epoch']
     best_loss = experiment['best_loss']
     best_dice = experiment['best_dice']
@@ -50,7 +56,7 @@ def run():
     loss_fn = CostumeLoss()
     loss_fn.register_backward_hook(printgradnorm)
 
-    optimizer = torch.optim.Adam(filter(lambda p:p.requires_grad, model.parameters()), learning_rate)
+    optimizer = torch.optim.Adam(filter(lambda p:p.requires_grad, fe.parameters()), learning_rate)
 
     exp_logger.info('training started/resumed at epoch ' + str(current_epoch))
 
@@ -60,7 +66,7 @@ def run():
         for batch_num, batch in enumerate(train_dataloader):
             inputs = Variable(batch['image'].type(float_type))
             labels = batch['label'].cpu().numpy()
-            features = model(inputs)
+            features = fe(inputs)
 
             optimizer.zero_grad()
             current_loss = loss_fn(features,labels, k)
@@ -74,7 +80,7 @@ def run():
         train_loss = running_loss/batch_num
 
         # Evaluate model
-        val_loss, average_dice = evaluate_model(model, val_dataloader, loss_fn, current_experiment, i)
+        val_loss, average_dice = evaluate_model(fe, val_dataloader, loss_fn, current_experiment, i)
 
         if best_dice is None or average_dice < best_dice:
             best_dice = average_dice
@@ -88,7 +94,8 @@ def run():
         val_loss_history.append(val_loss)
         dice_history.append(average_dice)
 
-        save_experiment({'model_state_dict': model.state_dict(),
+        save_experiment({'fe_state_dict': fe.state_dict(),
+                         'classifier_state_dict': classifier.state_dict(),
                          'epoch': i + 1,
                          'best_loss': best_loss,
                          'best_dice': best_dice,
