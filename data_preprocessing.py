@@ -44,11 +44,6 @@ def annsToSeg(anns):
                 to which it belongs
     '''
     image_details = coco.loadImgs(anns[0]['image_id'])[0]
-    # ------------------For testing-------------
-    #image = plt.imread(validation_images_path+'\\'+image_details['file_name'])
-    #plt.imshow(image)
-    #coco.showAnns(anns)
-    #plt.show()
 
     h = image_details['height']
     w = image_details['width']
@@ -135,6 +130,3 @@ def crop_center(img,cropx,cropy):
     startx = x//2-(cropx//2)
     starty = y//2-(cropy//2)
     return img[starty:starty+cropy,startx:startx+cropx]
-
-#if __name__=='__main__':
-    #main()

@@ -36,7 +36,7 @@ voc_val_ids = 'E:\Almog\DLProjectData\VOC2012\ImageSets\Segmentation\\val.txt'
 chkpts_dir = 'C:\\Almog\\2018a\\DLProject\\instance_segmentation\\FeatureExtractor_checkpoints\\'
 
 
-def config_experiment(name, resume=True):
+def config_experiment(name, resume=True, context=False):
 
     exp = {}
     os.makedirs(chkpts_dir+name, exist_ok=True)
@@ -51,7 +51,7 @@ def config_experiment(name, resume=True):
         except:
             logger.warning('checkpoint does not exist. creating new experiment')
 
-    model = FeatureExtractor()
+    model = FeatureExtractor(context=context)
     exp['model_state_dict'] = model.state_dict()
     exp['epoch'] = 0
     exp['best_loss'] = None

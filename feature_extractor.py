@@ -3,10 +3,10 @@ import torch
 import torch.nn as nn
 
 
-
 class FeatureExtractor(nn.Module):
-    def __init__(self):
+    def __init__(self, context=False):
         super(FeatureExtractor, self).__init__()
+        self.context = context
         self.resnet = models.resnet18(True)
         for param in self.resnet.parameters():
             param.requires_grad = False
@@ -18,7 +18,10 @@ class FeatureExtractor(nn.Module):
         self.finalConv = nn.Sequential(nn.Conv2d(64, 32, 1, 1),
                                        nn.ReLU(),
                                        nn.BatchNorm2d(32))
-        self.contextLayer = ContextModule(64,32)
+
+        if self.context:
+            self.upsample4 = UpsamplingBlock(128, 64)
+            self.contextLayer = ContextModule(64,32)
 
     def forward(self, x):
         outputs = {}
@@ -38,7 +41,9 @@ class FeatureExtractor(nn.Module):
         if (features!=features).data.any():
             print("nan in upsampling layer 3")
 
-        #features = self.contextLayer(features)
+        if self.context:
+            context = self.contextLayer(features)
+            features = torch.cat([features, context],1)
 
         features = self.upsample4(features, outputs['relu'])
         if (features!=features).data.any():
@@ -85,12 +90,33 @@ class UpsamplingBlock(nn.Module):
         return x
 
 
+class ClassifyingModule(nn.Module):
+    '''
+    this module takes as input a (batch, channels, h, w) tensor of pixel embeddings,
+     and returns a (batch, classes, h, w) tensor of class probabilities.
+     It is a basic 1-hidden layer feed forward net, with softmax at the end.
+    '''
+    def __init__(self, input_size, hidden_size, num_classes):
+        super(ClassifyingModule, self).__init__()
+        self.fc = nn.Sequential(nn.Linear(input_size, hidden_size),
+                                nn.ReLU(),
+                                nn.Linear(hidden_size, num_classes),
+                                nn.Softmax())
+
+    def forward(self, x):
+        x = x.permute(0,2,3,1)
+        x = self.fc(x)
+        x = x.permute(0,3,1,2)
+        return x
+
+
 class ContextModule(nn.Module):
     '''
     this is essentialy a bi-LSTM that process the feature vectors.
     It recieves a (batch*channels*height*width) tensor and outputs a tensor
     of the same size after the rnn pass.
     '''
+
     def __init__(self, input_size, hidden_size):
         super(ContextModule, self).__init__()
         self.hidden_size = hidden_size
@@ -98,10 +124,10 @@ class ContextModule(nn.Module):
                             bidirectional=True)
 
     def forward(self, x):
-        x = x.permute(0,2,3,1).contiguous()
+        x = x.permute(0, 2, 3, 1).contiguous()
         bs, h, w, f = x.size()
-        x = x.view(bs, h*w, f)
+        x = x.view(bs, h * w, f)
         x, _ = self.lstm(x)
-        x = x.contiguous().view(bs, h, w, 2*self.hidden_size)
-        x = x.permute(0,3,1,2)
+        x = x.contiguous().view(bs, h, w, 2 * self.hidden_size)
+        x = x.permute(0, 3, 1, 2)
         return x

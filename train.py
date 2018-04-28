@@ -21,8 +21,9 @@ if torch.cuda.is_available():
 k = 12
 batch_size = 2
 learning_rate = 0.001
-lr_decay = 0.995
+lr_decay = 0.98
 max_epoch_num = 100
+context = False
 current_experiment = 'test_03'
 current_data_root = processed_train_root
 
@@ -41,10 +42,10 @@ def run():
     val_dataloader = DataLoader(val_dataset, batch_size)
 
     # Set up an experiment
-    experiment, exp_logger = config_experiment(current_experiment, resume=True)
+    experiment, exp_logger = config_experiment(current_experiment, resume=True, context=context)
     #tfLogger = Logger('./tfLogs')
 
-    model = FeatureExtractor()
+    model = FeatureExtractor(context)
     model.resnet.register_backward_hook(printgradnorm)
     for block in model.children():
         if block.__class__.__name__=='UpsamplingBlock':
