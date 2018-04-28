@@ -153,6 +153,7 @@ def evaluate_model(model, dataloader, loss_fn, name, epoch):
     '''
     running_loss = 0
     running_dice = 0
+    dice_dist = 0
     for i, batch in enumerate(dataloader):
         inputs = Variable(batch['image'].type(float_type), volatile=True)
         labels = batch['label'].cpu().numpy()
@@ -161,11 +162,12 @@ def evaluate_model(model, dataloader, loss_fn, name, epoch):
         current_loss = loss_fn(features, labels)
 
         np_features = features.data.cpu().numpy()
-        pred = predict_label(np_features[0], downsample_factor=2)
+        for j, item in enumerate(np_features):
+            pred = predict_label(item, downsample_factor=2)
+            dice_dist += best_symmetric_dice(pred, labels[j])
 
-        dice_dist = best_symmetric_dice(pred, labels[0])
         running_loss += current_loss.data.cpu().numpy()[0]
-        running_dice += dice_dist
+        running_dice += dice_dist / j
 
     val_loss = running_loss / (i+1)
     average_dice = running_dice / (i+1)
