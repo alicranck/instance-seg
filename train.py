@@ -43,11 +43,12 @@ def run():
 
     # Set up an experiment
     experiment, exp_logger = config_experiment(current_experiment, resume=True, context=context)
-    #tfLogger = Logger('./tfLogs')
 
-    model = FeatureExtractor(context)
-    model.resnet.register_backward_hook(printgradnorm)
-    for block in model.children():
+    feature_extractor = FeatureExtractor(embedding_dim, context)
+    classifier = ClassifyingModule(embedding_dim, classifier_hidden, num_classes)
+
+    feature_extractor.resnet.register_backward_hook(printgradnorm)
+    for block in feature_extractor.children():
         if block.__class__.__name__=='UpsamplingBlock':
             for child in block.children():
                 child.register_backward_hook(printgradnorm)
@@ -56,9 +57,10 @@ def run():
 
     if torch.cuda.is_available():
         print("CUDA")
-        model.cuda()
+        feature_extractor.cuda()
 
-    model.load_state_dict(experiment['model_state_dict'])
+    feature_extractor.load_state_dict(experiment['fe_state_dict'])
+    classifier.load_state_dict(experiment['classifier_state_dict'])
     current_epoch = experiment['epoch']
     best_loss = experiment['best_loss']
     train_loss_history = experiment['train_loss']
@@ -67,7 +69,7 @@ def run():
     loss_fn = CostumeLoss()
     loss_fn.register_backward_hook(printgradnorm)
 
-    optimizer = torch.optim.Adam(filter(lambda p:p.requires_grad, model.parameters()), learning_rate)
+    optimizer = torch.optim.Adam(filter(lambda p:p.requires_grad, feature_extractor.parameters()), learning_rate)
 
     exp_logger.info('training started/resumed at epoch ' + str(current_epoch))
 
@@ -77,7 +79,7 @@ def run():
         for batch_num, batch in enumerate(train_dataloader):
             inputs = Variable(batch['image'].type(float_type))
             labels = batch['label'].cpu().numpy()
-            features = model(inputs)
+            features = feature_extractor(inputs)
 
             optimizer.zero_grad()
             current_loss = loss_fn(features,labels, k)
@@ -91,8 +93,8 @@ def run():
         train_loss = running_loss/batch_num
 
         # Evaluate model
-        model.eval()
-        val_loss, average_dice = evaluate_model(model, val_dataloader, loss_fn)
+        feature_extractor.eval()
+        val_loss, average_dice = evaluate_model(feature_extractor, val_dataloader, loss_fn)
 
         if best_loss is None or val_loss < best_loss:
             best_loss = running_loss
@@ -105,7 +107,7 @@ def run():
         train_loss_history.append(train_loss)
         val_loss_history.append(val_loss)
 
-        save_experiment({'model_state_dict': model.state_dict(),
+        save_experiment({'model_state_dict': feature_extractor.state_dict(),
                          'epoch': i + 1,
                          'best_loss': best_loss,
                          'train_loss': train_loss_history,
@@ -118,11 +120,11 @@ def run():
         plt.close()
 
         if VISUALIZE:
-            features = model(inputs)
+            features = feature_extractor(inputs)
             reduced_features = reduce(features.data, 10)
             visualize(inputs, reduced_features, current_experiment, i)
 
-        model.train()
+        feature_extractor.train()
 
 
 def printgradnorm(self, grad_input, grad_output):

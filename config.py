@@ -5,6 +5,8 @@ import numpy as np
 from feature_extractor import *
 
 embedding_dim = 32
+classifier_hidden = 128
+num_classes = 20
 
 float_type = torch.FloatTensor
 double_type = torch.DoubleTensor
@@ -51,8 +53,10 @@ def config_experiment(name, resume=True, context=False):
         except:
             logger.warning('checkpoint does not exist. creating new experiment')
 
-    model = FeatureExtractor(context=context)
-    exp['model_state_dict'] = model.state_dict()
+    fe = FeatureExtractor(embedding_dim, context=context)
+    classifier = ClassifyingModule(embedding_dim, classifier_hidden, num_classes)
+    exp['fe_state_dict'] = fe.state_dict()
+    exp['classifier_state_dict'] = classifier.state_dict()
     exp['epoch'] = 0
     exp['best_loss'] = None
     exp['train_loss'] = []

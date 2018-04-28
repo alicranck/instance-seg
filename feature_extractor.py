@@ -3,9 +3,11 @@ import torch
 import torch.nn as nn
 
 
+
 class FeatureExtractor(nn.Module):
-    def __init__(self, context=False):
+    def __init__(self, embedding_dim, context=False):
         super(FeatureExtractor, self).__init__()
+        self.embedding_dim = embedding_dim
         self.context = context
         self.resnet = models.resnet18(True)
         for param in self.resnet.parameters():
@@ -15,9 +17,9 @@ class FeatureExtractor(nn.Module):
         self.upsample3 = UpsamplingBlock(128, 64)
         self.upsample4 = UpsamplingBlock(64, 64)
         self.upsample5 = UpsamplingBlock(64, 64, skip=False)
-        self.finalConv = nn.Sequential(nn.Conv2d(64, 32, 1, 1),
+        self.finalConv = nn.Sequential(nn.Conv2d(64, self.embedding_dim, 1, 1),
                                        nn.ReLU(),
-                                       nn.BatchNorm2d(32))
+                                       nn.BatchNorm2d(self.embedding_dim))
 
         if self.context:
             self.upsample4 = UpsamplingBlock(128, 64)
