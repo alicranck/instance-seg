@@ -6,7 +6,7 @@ from config import *
 eps = 0.0000000000001
 
 dv = 0.0
-dd = 1.5
+dd = 2
 
 gamma = 0.001
 
@@ -165,9 +165,12 @@ def contrasive_loss(features, label, k=0):
     means = []
     var_loss = Variable(torch.Tensor([0]).type(double_type))
     dist_loss = Variable(torch.Tensor([0]).type(double_type))
-
     # calculate intra-cluster loss
     for instance in instances:
+        if instance==255:   # ignore borders
+            print(instance)
+            continue
+
         # collect all feature vector of a certain instance
         locations = Variable(torch.LongTensor(np.where(label == instance)[0]).type(long_type))
         vectors = torch.index_select(features,dim=0,index=locations).type(double_type)
@@ -177,6 +180,7 @@ def contrasive_loss(features, label, k=0):
         if instance == 0:   # push background to 0
             mean = Variable(torch.zeros((vectors.data.shape[1])).type(double_type))
             dist2mean = torch.sum(vectors**2, 1)
+            #continue
         else:
             mean = torch.sum(vectors, dim=0) / size
             dists = vectors - mean
@@ -191,15 +195,21 @@ def contrasive_loss(features, label, k=0):
     for i in range(num_clusters):
         if num_clusters==1:  # no inter cluster loss
             break
-        dists = torch.norm(means - mean[i], 2, 1)
-        hinge_cond = (2*dd-dists>0).type(double_type)
-        hinge_dist = hinge_cond*(2*dd-dists)
-        dist_loss = dist_loss + torch.sum(torch.pow(hinge_dist, 2))/(num_clusters-1)
+        for j in range(i+1, num_clusters):
+            dist = torch.norm(means[i]-means[j])
+            if dist.data[0]<dd*2:
+                dist_loss += torch.pow(2*dd - dist,2)/(num_clusters-1)
+        #dists = torch.norm(means - mean[i], 2, 1)
+        #hinge_cond = (2*dd-dists>0).type(double_type)
+        #hinge_dist = hinge_cond*(2*dd-dists)
+        #dist_loss = dist_loss + torch.sum(torch.pow(hinge_dist, 2))/(num_clusters-1)
+    print('dist loss: ' + str(dist_loss.data[0]))
+    print('var loss: ' + str(var_loss.data[0]))
 
     # regularization term
     reg_loss = torch.sum(torch.norm(means, 2, 1))
 
-    total_loss = (var_loss + dist_loss + reg_loss*gamma) / num_clusters
+    total_loss = (var_loss + dist_loss) / num_clusters
 
     return total_loss.type(float_type)
 

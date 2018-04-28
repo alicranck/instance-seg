@@ -8,11 +8,17 @@ class FeatureExtractor(nn.Module):
     def __init__(self):
         super(FeatureExtractor, self).__init__()
         self.resnet = models.resnet18(True)
+        for param in self.resnet.parameters():
+            param.requires_grad = False
         self.upsample1 = UpsamplingBlock(512, 256)
         self.upsample2 = UpsamplingBlock(256, 128)
         self.upsample3 = UpsamplingBlock(128, 64)
         self.upsample4 = UpsamplingBlock(64, 64)
         self.upsample5 = UpsamplingBlock(64, 64, skip=False)
+        self.finalConv = nn.Sequential(nn.Conv2d(64, 32, 1, 1),
+                                       nn.ReLU(),
+                                       nn.BatchNorm2d(32))
+        self.contextLayer = ContextModule(64,32)
 
     def forward(self, x):
         outputs = {}
@@ -31,6 +37,9 @@ class FeatureExtractor(nn.Module):
         features = self.upsample3(features, outputs['layer1'])
         if (features!=features).data.any():
             print("nan in upsampling layer 3")
+
+        #features = self.contextLayer(features)
+
         features = self.upsample4(features, outputs['relu'])
         if (features!=features).data.any():
             print("nan in upsampling layer 4")
@@ -38,25 +47,61 @@ class FeatureExtractor(nn.Module):
         if (features!=features).data.any():
             print("nan in upsampling layer 5")
 
+        features = self.finalConv(features)
+
         return features
 
 
 class UpsamplingBlock(nn.Module):
     def __init__(self, channels_in, channels_out, skip=True):
         super(UpsamplingBlock, self).__init__()
-        self.upsamplingLayer = nn.ConvTranspose2d(channels_in, channels_out, kernel_size=2, stride=2)
+        #self.upsamplingLayer = nn.ConvTranspose2d(channels_in, channels_out, kernel_size=2, stride=2)
+        self.upsamplingLayer = nn.Sequential(nn.Upsample(scale_factor=2),
+                                             nn.Conv2d(channels_in, channels_out, kernel_size=1, stride=1),
+                                             nn.ReLU(),
+                                             nn.BatchNorm2d(channels_out))
+
         if skip:
-            self.conv = nn.Conv2d(2*channels_out, channels_out, kernel_size=1, stride=1)  # Possibly more conv layers
+            self.conv1 = nn.Conv2d(2*channels_out, channels_out, kernel_size=3, stride=1, padding=1)
         else:
-            self.conv = nn.Conv2d(channels_out, channels_out, kernel_size=1, stride=1)
-        self.relu1 = nn.ReLU()
-        self.batchNorm = nn.BatchNorm2d(channels_out)
+            self.conv1 = nn.Conv2d(channels_out, channels_out, kernel_size=3, stride=1, padding=1)
+
+        self.conv2 = nn.Conv2d(channels_out, channels_out, kernel_size=3, stride=1, padding=1)
+
+        self.convLayer1 = nn.Sequential(self.conv1,
+                                        nn.ReLU(),
+                                        nn.BatchNorm2d(channels_out))
+
+        self.convLayer2 = nn.Sequential(self.conv2,
+                                        nn.ReLU(),
+                                        nn.BatchNorm2d(channels_out))
 
     def forward(self, x, skip_input=None):
         x = self.upsamplingLayer(x)
         if skip_input is not None:
             x = torch.cat((x, skip_input), 1)
-        x = self.conv(x)
-        x = self.relu1(x)
-        x = self.batchNorm(x)
+        x = self.convLayer1(x)
+        x = self.convLayer2(x)
+        return x
+
+
+class ContextModule(nn.Module):
+    '''
+    this is essentialy a bi-LSTM that process the feature vectors.
+    It recieves a (batch*channels*height*width) tensor and outputs a tensor
+    of the same size after the rnn pass.
+    '''
+    def __init__(self, input_size, hidden_size):
+        super(ContextModule, self).__init__()
+        self.hidden_size = hidden_size
+        self.lstm = nn.LSTM(input_size=input_size, hidden_size=hidden_size, batch_first=True,
+                            bidirectional=True)
+
+    def forward(self, x):
+        x = x.permute(0,2,3,1).contiguous()
+        bs, h, w, f = x.size()
+        x = x.view(bs, h*w, f)
+        x, _ = self.lstm(x)
+        x = x.contiguous().view(bs, h, w, 2*self.hidden_size)
+        x = x.permute(0,3,1,2)
         return x
