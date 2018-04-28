@@ -130,7 +130,7 @@ def printgradnorm(self, grad_input, grad_output):
 def adjust_learning_rate(optimizer, epoch, lr, decay_rate):
     """Sets the learning rate to the initial LR decayed by 10 every 30 epochs"""
     for param_group in optimizer.param_groups:
-        param_group['lr'] = np.power(lr, epoch)
+        param_group['lr'] = lr*np.power(decay_rate, epoch)
 
 
 if __name__=='__main__':
