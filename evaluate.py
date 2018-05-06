@@ -1,17 +1,20 @@
 import numpy as np
 from torch.autograd import Variable
 from scipy.misc import imsave
-from scipy.spatial.distance import dice
+from torchvision.transforms import ToTensor
 import hdbscan
 from sklearn.decomposition import PCA
+from torchvision.transforms import ToTensor
 from sklearn.manifold import TSNE
 import matplotlib
-matplotlib.use('Agg')
+#matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 import skimage.measure
 from skimage.transform import rescale
 import os
 from config import *
+import PIL.Image as im
+
 
 
 def predict_label(features, downsample_factor=1):
@@ -194,7 +197,7 @@ def evaluate_model(model, dataloader, loss_fn, name, epoch):
             dice_dist += best_symmetric_dice(pred, labels[j])
 
         running_loss += current_loss.data.cpu().numpy()[0]
-        running_dice += dice_dist / j
+        running_dice += dice_dist / (j+1)
 
     val_loss = running_loss / (i+1)
     average_dice = running_dice / (i+1)
@@ -202,3 +205,27 @@ def evaluate_model(model, dataloader, loss_fn, name, epoch):
     visualize(inputs.data[0].cpu().numpy(), labels[0], np_features[0], name, epoch)
 
     return val_loss, average_dice
+
+
+def test_model(model, image_path, target_path, id):
+
+    toTensor = ToTensor()
+    img = im.open(image_path)
+
+    old_size = img.size  # old_size is in (width, height) format
+    new_size = (old_size[0] - (old_size[0]%32), old_size[1] - (old_size[1]%32))
+
+    img = img.resize(new_size, im.ANTIALIAS)
+    img_tensor = torch.unsqueeze(toTensor(img),0)
+
+    features = model(img_tensor)
+    np_features = features.data.cpu().numpy()
+
+    predicted_label = predict_label(np_features, downsample_factor=1)
+    imsave(target_path + str(id) + 'seg.png', predicted_label)
+
+    # draw predicted seg on img and save
+    plt.imshow(img)
+    plt.imshow(predicted_label, alpha=0.5)
+    plt.savefig(target_path + str(id) + 'vis.png')
+    plt.close()

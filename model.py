@@ -102,13 +102,14 @@ class ClassifyingModule(nn.Module):
         super(ClassifyingModule, self).__init__()
         self.fc = nn.Sequential(nn.Linear(input_size, hidden_size),
                                 nn.ReLU(),
-                                nn.Linear(hidden_size, num_classes),
-                                nn.Softmax())
+                                nn.Linear(hidden_size, num_classes))
+        self.softmax = nn.Softmax2d()
 
     def forward(self, x):
         x = x.permute(0,2,3,1)
         x = self.fc(x)
         x = x.permute(0,3,1,2)
+        x = self.softmax(x)
         return x
 
 

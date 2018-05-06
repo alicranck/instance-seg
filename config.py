@@ -2,13 +2,13 @@ import logging
 import os
 import torch
 import numpy as np
-from feature_extractor import *
+from model import *
 
 # Hyper parameters
 k = 12
 embedding_dim = 32
 classifier_hidden = 128
-num_classes = 20
+num_classes = 21
 batch_size = 2
 learning_rate = 0.001
 lr_decay = 0.98
@@ -67,7 +67,7 @@ def config_experiment(name, resume=True, context=False):
         except:
             logger.warning('checkpoint does not exist. creating new experiment')
 
-    fe = FeatureExtractor(context=context)
+    fe = FeatureExtractor(embedding_dim, context=context)
     classifier = ClassifyingModule(embedding_dim, classifier_hidden, num_classes)
     exp['fe_state_dict'] = fe.state_dict()
     exp['classifier_state_dict'] = classifier.state_dict()
