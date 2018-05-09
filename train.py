@@ -3,7 +3,7 @@ import torch.autograd
 from config import *
 from costum_dataset import *
 from torch.utils.data import DataLoader
-from loss import CostumeLoss, sample_loss
+from loss import CostumeLoss
 from evaluate import *
 
 
@@ -53,34 +53,47 @@ def run():
     val_loss_history = experiment['val_loss']
     dice_history = experiment['dice']
 
-    loss_fn = CostumeLoss()
-    loss_fn.register_backward_hook(printgradnorm)
+    fe_loss_fn = CostumeLoss()
+    classifier_loss_fn = nn.CrossEntropyLoss()
 
-    optimizer = torch.optim.Adam(filter(lambda p:p.requires_grad, fe.parameters()), learning_rate)
+    fe_loss_fn.register_backward_hook(printgradnorm)
+    classifier_loss_fn.register_backward_hook(printgradnorm)
+
+    fe_opt = torch.optim.Adam(filter(lambda p:p.requires_grad, fe.parameters()), learning_rate)
+    classifier_opt = torch.optim.Adam(filter(lambda p:p.requires_grad, classifier.parameters()), learning_rate)
 
     exp_logger.info('training started/resumed at epoch ' + str(current_epoch))
 
     for i in range(current_epoch, max_epoch_num):
-        adjust_learning_rate(optimizer, i, learning_rate, lr_decay)
+        adjust_learning_rate(fe_opt, i, learning_rate, lr_decay)
+        adjust_learning_rate(classifier_opt, i, learning_rate, lr_decay)
+
         running_loss = 0
         for batch_num, batch in enumerate(train_dataloader):
             inputs = Variable(batch['image'].type(float_type))
             labels = batch['label'].cpu().numpy()
+            class_labels = batch['class_label'].cpu().numpy()
             features = fe(inputs)
 
-            optimizer.zero_grad()
-            current_loss = loss_fn(features,labels, k)
-            current_loss.backward()
-            optimizer.step()
+            class_probs = classifier(features)
 
-            np_loss = current_loss.data[0]
-            running_loss += np_loss
-            exp_logger.info('epoch: ' + str(i) + ', batch number: '+str(batch_num)+', loss: '+str(np_loss))
+            fe_opt.zero_grad()
+            classifier_opt.zero_grad()
+            fe_loss = fe_loss_fn(features, labels, k)
+            class_loss = classifier_loss_fn(class_probs, class_labels)
+            fe_loss.backward()
+            class_loss.backward()
+            fe_opt.step()
+            classifier_opt.step()
+
+            np_fe_loss = fe_loss.data[0]
+            running_loss += np_fe_loss
+            exp_logger.info('epoch: ' + str(i) + ', batch number: '+str(batch_num)+', loss: '+str(np_fe_loss))
 
         train_loss = running_loss/batch_num
 
         # Evaluate model
-        val_loss, average_dice = evaluate_model(fe, val_dataloader, loss_fn, current_experiment, i)
+        val_loss, average_dice = evaluate_model(fe, val_dataloader, fe_loss_fn, current_experiment, i)
 
         if best_dice is None or average_dice < best_dice:
             best_dice = average_dice
@@ -135,7 +148,6 @@ def printgradnorm(self, grad_input, grad_output):
 
 
 def adjust_learning_rate(optimizer, epoch, lr, decay_rate):
-    """Sets the learning rate to the initial LR decayed by 10 every 30 epochs"""
     for param_group in optimizer.param_groups:
         param_group['lr'] = lr*np.power(decay_rate, epoch)
 

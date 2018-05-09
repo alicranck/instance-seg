@@ -9,7 +9,7 @@ class FeatureExtractor(nn.Module):
         super(FeatureExtractor, self).__init__()
         self.embedding_dim = embedding_dim
         self.context = context
-        self.resnet = models.resnet18(True)
+        self.resnet = models.resnet18(True)  # can be resnet34 or 50
         for param in self.resnet.parameters():
             param.requires_grad = False
         self.upsample1 = UpsamplingBlock(512, 256)
@@ -28,32 +28,19 @@ class FeatureExtractor(nn.Module):
     def forward(self, x):
         outputs = {}
         for name, module in list(self.resnet.named_children())[:-2]:
-            if (x!=x).data.any():
-                print("nan in layer "+name)
             x = module(x)
             outputs[name] = x
         features = outputs['layer4']  # Resnet output before final avgpool and fc layer
         features = self.upsample1(features, outputs['layer3'])
-        if (features!=features).data.any():
-            print("nan in upsampling layer 1")
         features = self.upsample2(features, outputs['layer2'])
-        if (features!=features).data.any():
-            print("nan in upsampling layer 2")
         features = self.upsample3(features, outputs['layer1'])
-        if (features!=features).data.any():
-            print("nan in upsampling layer 3")
 
         if self.context:
             context = self.contextLayer(features)
             features = torch.cat([features, context],1)
 
         features = self.upsample4(features, outputs['relu'])
-        if (features!=features).data.any():
-            print("nan in upsampling layer 4")
         features = self.upsample5(features)
-        if (features!=features).data.any():
-            print("nan in upsampling layer 5")
-
         features = self.finalConv(features)
 
         return features

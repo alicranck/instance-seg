@@ -1,9 +1,7 @@
 from torch.utils.data import Dataset
 import PIL.Image as im
-from scipy import misc
 import numpy as np
 from torchvision import transforms
-import torch
 
 
 class coco224Dataset(Dataset):
