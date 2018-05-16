@@ -8,7 +8,7 @@ from model import *
 k = 12
 embedding_dim = 32
 classifier_hidden = 128
-num_classes = 21
+num_classes = 2  # classify foreground background for now
 batch_size = 2
 learning_rate = 0.001
 lr_decay = 0.98
@@ -72,11 +72,13 @@ def config_experiment(name, resume=True, context=False):
     exp['fe_state_dict'] = fe.state_dict()
     exp['classifier_state_dict'] = classifier.state_dict()
     exp['epoch'] = 0
-    exp['best_loss'] = None
-    exp['best_dice'] = None
-    exp['train_loss'] = []
-    exp['val_loss'] = []
-    exp['dice'] = []
+    exp['best_mAP'] = None
+    exp['train_fe_loss'] = []
+    exp['val_fe_loss'] = []
+    exp['train_class_loss'] = []
+    exp['val_class_loss'] = []
+    exp['gtfg_mAP_history'] = []
+    exp['predfg_mAP_history'] = []
 
     return exp, logger
 

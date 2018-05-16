@@ -9,7 +9,7 @@ class FeatureExtractor(nn.Module):
         super(FeatureExtractor, self).__init__()
         self.embedding_dim = embedding_dim
         self.context = context
-        self.resnet = models.resnet18(True)  # can be resnet34 or 50
+        self.resnet = models.resnet34(True)  # can be resnet34 or 50
         for param in self.resnet.parameters():
             param.requires_grad = False
         self.upsample1 = UpsamplingBlock(512, 256)

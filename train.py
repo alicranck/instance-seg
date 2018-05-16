@@ -5,6 +5,7 @@ from costum_dataset import *
 from torch.utils.data import DataLoader
 from loss import CostumeLoss
 from evaluate import *
+import torchvision
 
 
 current_experiment = 'test_04'
@@ -20,8 +21,8 @@ def run():
     train_dataset = VOCDataset(data_path, labels_path, voc_train_ids)
     train_dataloader = DataLoader(train_dataset, batch_size, shuffle=True)
 
-    val_dataset = VOCDataset(data_path, labels_path, voc_val_ids)
-    val_dataloader = DataLoader(val_dataset, batch_size)
+    val_dataset = torchvision.datasets.CocoDetection(validation_images_path, val_annotations)
+    val_dataloader = DataLoader(val_dataset)
 
     # Set up an experiment
     experiment, exp_logger = config_experiment(current_experiment, resume=True, context=context)
@@ -47,11 +48,13 @@ def run():
     fe.load_state_dict(experiment['fe_state_dict'])
     classifier.load_state_dict(experiment['classifier_state_dict'])
     current_epoch = experiment['epoch']
-    best_loss = experiment['best_loss']
-    best_dice = experiment['best_dice']
-    train_loss_history = experiment['train_loss']
-    val_loss_history = experiment['val_loss']
-    dice_history = experiment['dice']
+    best_mAP = experiment['best_mAP']
+    train_fe_loss_history = experiment['train_fe_loss']
+    train_class_loss_history = experiment['train_class_loss']
+    val_fe_loss_history = experiment['val_fe_loss']
+    val_class_loss_history = experiment['val_class_loss']
+    gtfg_mAP_history = experiment['gtfg_mAP_history']
+    predfg_mAP_history = experiment['predfg_mAP_history']
 
     fe_loss_fn = CostumeLoss()
     classifier_loss_fn = nn.CrossEntropyLoss()
@@ -68,61 +71,84 @@ def run():
         adjust_learning_rate(fe_opt, i, learning_rate, lr_decay)
         adjust_learning_rate(classifier_opt, i, learning_rate, lr_decay)
 
-        running_loss = 0
+        running_fe_loss = 0
+        running_class_loss = 0
         for batch_num, batch in enumerate(train_dataloader):
             inputs = Variable(batch['image'].type(float_type))
             labels = batch['label'].cpu().numpy()
             class_labels = batch['class_label'].cpu().numpy()
+            fg_masks = np.where(class_labels>0)
             features = fe(inputs)
 
-            class_probs = classifier(features)
+            pred_masks = classifier(features)
 
             fe_opt.zero_grad()
             classifier_opt.zero_grad()
             fe_loss = fe_loss_fn(features, labels, k)
-            class_loss = classifier_loss_fn(class_probs, class_labels)
+            class_loss = classifier_loss_fn(pred_masks, fg_masks)
             fe_loss.backward()
             class_loss.backward()
             fe_opt.step()
             classifier_opt.step()
 
             np_fe_loss = fe_loss.data[0]
-            running_loss += np_fe_loss
-            exp_logger.info('epoch: ' + str(i) + ', batch number: '+str(batch_num)+', loss: '+str(np_fe_loss))
+            np_class_loss = class_loss.data[0]
 
-        train_loss = running_loss/batch_num
+            running_fe_loss += np_fe_loss
+            running_class_loss += np_class_loss
+            exp_logger.info('epoch: ' + str(i) + ', batch number: '+str(batch_num)+
+                            ', fe loss: '+str(np_fe_loss) + ' class_loss: '+str(np_class_loss))
+
+
+        train_fe_loss = running_fe_loss/batch_num
+        train_class_loss = running_class_loss/batch_num
 
         # Evaluate model
-        val_loss, average_dice = evaluate_model(fe, val_dataloader, fe_loss_fn, current_experiment, i)
+        val_fe_loss, val_class_loss, gtfg_mAP, predfg_mAP = evaluate_model_coco(fe, classifier, val_dataloader,
+                                                               fe_loss_fn, classifier_loss_fn, 300)
 
-        if best_dice is None or average_dice < best_dice:
-            best_dice = average_dice
+        if best_mAP is None or gtfg_mAP < best_mAP:
+            best_mAP = gtfg_mAP
             isBest = True
         else:
             isBest = False
 
-        exp_logger.info('Saving checkpoint. Average validation loss is: ' + str(val_loss) +
-                        ' Average DICE is : ' + str(average_dice))
-        train_loss_history.append(train_loss)
-        val_loss_history.append(val_loss)
-        dice_history.append(average_dice)
+        exp_logger.info('Saving checkpoint. Average validation fe loss is: ' + str(val_fe_loss) + 'classifier loss: ' +
+                       str(val_class_loss) + ' gtfg mAP is : ' + str(gtfg_mAP)+ ' predfg mAP is : ' + str(predfg_mAP))
+        train_fe_loss_history.append(train_fe_loss)
+        train_class_loss_history.append(train_class_loss)
+        val_fe_loss_history.append(val_fe_loss)
+        val_class_loss_history.append(val_class_loss)
+        gtfg_mAP_history.append(gtfg_mAP)
+        predfg_mAP_history.append(predfg_mAP)
+
+
 
         save_experiment({'fe_state_dict': fe.state_dict(),
                          'classifier_state_dict': classifier.state_dict(),
                          'epoch': i + 1,
-                         'best_loss': best_loss,
-                         'best_dice': best_dice,
-                         'train_loss': train_loss_history,
-                         'val_loss': val_loss_history,
-                         'dice': dice_history}, current_experiment, isBest)
+                         'best_mAP': best_mAP,
+                         'train_fe_loss': train_fe_loss_history,
+                         'train_class_loss': train_class_loss_history,
+                         'val_fe_loss': val_fe_loss_history,
+                         'val_class_loss': val_class_loss_history,
+                         'gtfg_mAP_history': gtfg_mAP_history,
+                         'predfg_mAP_history': predfg_mAP_history}, current_experiment, isBest)
 
-        plt.plot(train_loss_history, 'r')
-        plt.plot(val_loss_history, 'b')
+        plt.plot(train_fe_loss_history, 'r')
+        plt.plot(val_fe_loss_history, 'b')
         os.makedirs('visualizations/' + current_experiment, exist_ok=True)
-        plt.savefig('visualizations/' + current_experiment + '/loss.png')
+        plt.savefig('visualizations/' + current_experiment + '/fe_loss.png')
         plt.close()
-        plt.plot(dice_history)
-        plt.savefig('visualizations/' + current_experiment + '/dice.png')
+
+        plt.plot(train_class_loss_history, 'r-')
+        plt.plot(val_class_loss_history, 'b-')
+        plt.savefig('visualizations/' + current_experiment + '/class_loss.png')
+        plt.close()
+
+        plt.plot(gtfg_mAP_history, 'g')
+        plt.plot(predfg_mAP_history, 'y')
+        plt.savefig('visualizations/' + current_experiment + '/mAP.png')
         plt.close()
 
 

@@ -4,7 +4,7 @@ from scipy.misc import imsave
 from torchvision.transforms import ToTensor
 import hdbscan
 from sklearn.decomposition import PCA
-from torchvision.transforms import ToTensor
+from torchvision.transforms import ToTensor, ToPILImage
 from sklearn.manifold import TSNE
 import matplotlib
 #matplotlib.use('Agg')
@@ -12,8 +12,13 @@ import matplotlib.pyplot as plt
 import skimage.measure
 from skimage.transform import rescale
 import os
+from pycocotools.coco import COCO
+from pycocotools.cocoeval import COCOeval
+import pycocotools.cocostuffhelper as helper
+from scipy.ndimage import zoom
 from config import *
 import PIL.Image as im
+from data_preprocessing import annsToSeg
 
 
 
@@ -32,7 +37,7 @@ def predict_label(features, downsample_factor=1):
 
     flat_features = np.reshape(features, [h*w,c])
     reduced_features = reduce(flat_features, 10)  # reduce dimension using PCA
-    cluster_mask = cluster_features(reduced_features)
+    cluster_mask = cluster_features(reduced_features) # cluster with hDBSCAN
     #cluster_mask = determine_background(flat_features, cluster_mask)
     predicted_label = np.reshape(cluster_mask, [h,w])
     predicted_label = rescale(predicted_label, order=0, scale=downsample_factor, preserve_range=True)
@@ -74,13 +79,9 @@ def cluster_features(features):
     :return: returns a (h*w,1) array with the cluster indices.
     '''
     # Define DBSCAN instance and cluster features
-    dbscan = hdbscan.HDBSCAN(algorithm='boruvka_kdtree',min_cluster_size=100)
+    dbscan = hdbscan.HDBSCAN(algorithm='boruvka_kdtree',min_cluster_size=500)
     labels = dbscan.fit_predict(features)
-    labels[np.where(labels==-1)] = 0
-    # suppress small clusters
-    #for i, count in enumerate(counts):
-        #if count<100 or instances[i]==-1:
-            #labels = np.where(labels==instances[i], 0, labels)
+    #labels[np.where(labels==-1)] = 0
 
     return labels
 
@@ -229,3 +230,92 @@ def test_model(model, image_path, target_path, id):
     plt.imshow(predicted_label, alpha=0.5)
     plt.savefig(target_path + str(id) + 'vis.png')
     plt.close()
+
+
+def evaluate_model_coco(fe_model, class_model, dataloader, fe_loss_fn, class_loss_fn, num_samples=400):
+
+    cocoGt = COCO(val_annotations)
+    toPil = ToPILImage()
+    toTensor = ToTensor()
+    img_ids = []
+    coco_gtfg_detections = []
+    coco_predfg_detections = []
+    running_fe_loss = 0
+    running_class_loss = 0
+
+    for i, batch in enumerate(dataloader):
+        img = toPil(batch[0][0])
+        ann = batch[0][1]
+        voc_label = annsToSeg(ann)
+        img_ids.append(ann[0]['image_id'])
+
+        old_size = img.size  # old_size is in (width, height) format
+        new_size = (old_size[0] - (old_size[0] % 32), old_size[1] - (old_size[1] % 32))
+
+        voc_label = zoom(voc_label, [new_size[1]/old_size[1], new_size[0]/old_size[0]], order=0)
+        img = img.resize(new_size, im.ANTIALIAS)
+
+        fg_label = np.where(voc_label>0, 1, 0)
+        img_tensor = torch.unsqueeze(toTensor(img), 0)
+
+        features = fe_model(Variable(img_tensor))
+        fg_pred = class_model(features)
+
+        fg_mask = np.where(fg_pred.data[0].numpy()[1]>fg_pred.data[0].numpy()[0], 1, 0)
+
+        fe_loss = fe_loss_fn(features, np.expand_dims(voc_label,0))
+        class_loss = class_loss_fn(fg_pred, Variable(torch.IntTensor(np.expand_dims(fg_label,0)).type(long_type)))
+
+        running_fe_loss += fe_loss.data.cpu().numpy()
+        running_class_loss += class_loss.data.cpu().numpy()
+
+        np_features = features.data[0].cpu().numpy()
+
+        pred = predict_label(np_features, downsample_factor=4)
+        pred += 2
+
+        gtfg_pred = pred * fg_label
+        predfg_pred = pred * fg_mask
+        gtfg_pred = zoom(gtfg_pred, [old_size[1]/new_size[1], old_size[0]/new_size[0]], order=0)
+        predfg_pred = zoom(predfg_pred, [old_size[1]/new_size[1], old_size[0]/new_size[0]], order=0)
+
+        plt.imshow(img)
+        plt.imshow(gtfg_pred, alpha=0.4)
+        plt.show()
+        coco_gtfg_detections.extend(helper.segmentationToCocoResult(gtfg_pred, ann[0]['image_id'], 0))
+        coco_predfg_detections.extend(helper.segmentationToCocoResult(predfg_pred, ann[0]['image_id'], 0))
+
+        for d in coco_gtfg_detections:
+            d['score'] = 0.8
+
+        for d in coco_predfg_detections:
+            d['score'] = 0.8
+
+        if i==num_samples-1:
+            break
+
+    coco_gtfg_Dt = cocoGt.loadRes(coco_gtfg_detections)
+
+    cocoEval = COCOeval(cocoGt, coco_gtfg_Dt, 'segm')
+    cocoEval.params.imgIds = img_ids
+    cocoEval.params.useCats = 0
+    cocoEval.evaluate()
+    cocoEval.accumulate()
+    cocoEval.summarize()
+
+    gtfg_map = cocoEval.stats[0]
+
+    coco_predfg_Dt = cocoGt.loadRes(coco_predfg_detections)
+
+    cocoEval = COCOeval(cocoGt, coco_predfg_Dt, 'segm')
+    cocoEval.params.imgIds = img_ids
+    cocoEval.params.useCats = 0
+    cocoEval.evaluate()
+    cocoEval.accumulate()
+    cocoEval.summarize()
+
+    predfg_map = cocoEval.stats[0]
+
+    return running_fe_loss[0]/num_samples, running_class_loss[0]/num_samples, gtfg_map, predfg_map
+
+
