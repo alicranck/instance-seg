@@ -19,10 +19,11 @@ from scipy.ndimage import zoom
 from config import *
 import PIL.Image as im
 from data_preprocessing import annsToSeg
+import time
 
 
 
-def predict_label(features, downsample_factor=1):
+def predict_label(features, downsample_factor=1, min_cluster=250):
     '''
     predicts a segmentation mask from the network output
     :param features: (c,h,w) ndarray containing the feature vectors outputted by the model
@@ -37,7 +38,7 @@ def predict_label(features, downsample_factor=1):
 
     flat_features = np.reshape(features, [h*w,c])
     reduced_features = reduce(flat_features, 10)  # reduce dimension using PCA
-    cluster_mask = cluster_features(reduced_features) # cluster with hDBSCAN
+    cluster_mask = cluster_features(reduced_features, min_cluster) # cluster with hDBSCAN
     #cluster_mask = determine_background(flat_features, cluster_mask)
     predicted_label = np.reshape(cluster_mask, [h,w])
     predicted_label = rescale(predicted_label, order=0, scale=downsample_factor, preserve_range=True)
@@ -71,7 +72,7 @@ def determine_background(features, cluster_mask):
     return cluster_mask
 
 
-def cluster_features(features):
+def cluster_features(features, min_cluster=250):
     '''
     this function takes a (h*w,c) numpy array, and clusters the c-dim points using MeanShift/DBSCAN.
     this function is meant to use for visualization and evaluation only.
@@ -79,7 +80,7 @@ def cluster_features(features):
     :return: returns a (h*w,1) array with the cluster indices.
     '''
     # Define DBSCAN instance and cluster features
-    dbscan = hdbscan.HDBSCAN(algorithm='boruvka_kdtree',min_cluster_size=500)
+    dbscan = hdbscan.HDBSCAN(algorithm='boruvka_kdtree',min_cluster_size=min_cluster)
     labels = dbscan.fit_predict(features)
     #labels[np.where(labels==-1)] = 0
 
@@ -232,7 +233,7 @@ def test_model(model, image_path, target_path, id):
     plt.close()
 
 
-def evaluate_model_coco(fe_model, class_model, dataloader, fe_loss_fn, class_loss_fn, num_samples=400):
+def evaluate_model_coco(fe_model, class_model, dataloader, fe_loss_fn, class_loss_fn, num_samples=400, downsample_factor=2, min_cluster=250):
 
     cocoGt = COCO(val_annotations)
     toPil = ToPILImage()
@@ -242,11 +243,18 @@ def evaluate_model_coco(fe_model, class_model, dataloader, fe_loss_fn, class_los
     coco_predfg_detections = []
     running_fe_loss = 0
     running_class_loss = 0
+    miss_cnt = 0
 
     for i, batch in enumerate(dataloader):
-        img = toPil(batch[0][0])
+        img = batch[0][0]
         ann = batch[0][1]
-        voc_label = annsToSeg(ann)
+        try:
+            voc_label = annsToSeg(ann)
+        except Exception as e:
+            print("error converting ann to seg")
+            print(type(e))
+            miss_cnt += 1
+            continue
         img_ids.append(ann[0]['image_id'])
 
         old_size = img.size  # old_size is in (width, height) format
@@ -258,10 +266,10 @@ def evaluate_model_coco(fe_model, class_model, dataloader, fe_loss_fn, class_los
         fg_label = np.where(voc_label>0, 1, 0)
         img_tensor = torch.unsqueeze(toTensor(img), 0)
 
-        features = fe_model(Variable(img_tensor))
+        features = fe_model(Variable(img_tensor.type(float_type)))
         fg_pred = class_model(features)
 
-        fg_mask = np.where(fg_pred.data[0].numpy()[1]>fg_pred.data[0].numpy()[0], 1, 0)
+        fg_mask = np.where(fg_pred.data[0].cpu().numpy()[1]>fg_pred.data[0].cpu().numpy()[0], 1, 0)
 
         fe_loss = fe_loss_fn(features, np.expand_dims(voc_label,0))
         class_loss = class_loss_fn(fg_pred, Variable(torch.IntTensor(np.expand_dims(fg_label,0)).type(long_type)))
@@ -271,7 +279,7 @@ def evaluate_model_coco(fe_model, class_model, dataloader, fe_loss_fn, class_los
 
         np_features = features.data[0].cpu().numpy()
 
-        pred = predict_label(np_features, downsample_factor=4)
+        pred = predict_label(np_features, downsample_factor, min_cluster)
         pred += 2
 
         gtfg_pred = pred * fg_label
@@ -279,9 +287,6 @@ def evaluate_model_coco(fe_model, class_model, dataloader, fe_loss_fn, class_los
         gtfg_pred = zoom(gtfg_pred, [old_size[1]/new_size[1], old_size[0]/new_size[0]], order=0)
         predfg_pred = zoom(predfg_pred, [old_size[1]/new_size[1], old_size[0]/new_size[0]], order=0)
 
-        plt.imshow(img)
-        plt.imshow(gtfg_pred, alpha=0.4)
-        plt.show()
         coco_gtfg_detections.extend(helper.segmentationToCocoResult(gtfg_pred, ann[0]['image_id'], 0))
         coco_predfg_detections.extend(helper.segmentationToCocoResult(predfg_pred, ann[0]['image_id'], 0))
 
@@ -290,10 +295,13 @@ def evaluate_model_coco(fe_model, class_model, dataloader, fe_loss_fn, class_los
 
         for d in coco_predfg_detections:
             d['score'] = 0.8
-
+	
+        if i%200==0:
+           print('evaluated ' + str(i) + ' images.')
         if i==num_samples-1:
             break
 
+    num_samples = i - miss_cnt
     coco_gtfg_Dt = cocoGt.loadRes(coco_gtfg_detections)
 
     cocoEval = COCOeval(cocoGt, coco_gtfg_Dt, 'segm')

@@ -13,7 +13,7 @@ batch_size = 2
 learning_rate = 0.001
 lr_decay = 0.98
 max_epoch_num = 100
-context = False
+context = True
 
 if torch.cuda.is_available():
     float_type = torch.cuda.FloatTensor
@@ -61,10 +61,11 @@ def config_experiment(name, resume=True, context=False):
     if resume:
 
         try:
-            exp = torch.load(chkpts_dir+name+'\\chkpt.pth')
+            exp = torch.load(chkpts_dir+name+'\\chkpt.pth',map_location=lambda storage, loc: storage)
             logger.info("loading checkpoint, experiment: " + name)
             return exp, logger
-        except:
+        except Exception as e:
+            print(e)
             logger.warning('checkpoint does not exist. creating new experiment')
 
     fe = FeatureExtractor(embedding_dim, context=context)

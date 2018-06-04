@@ -4,10 +4,10 @@ from torch.autograd import Variable
 from config import *
 
 
-dv = 0.0
-dd = 2
+dv = 0
+dd = 2.5
 
-gamma = 0.001
+gamma = 0.005
 
 
 class CostumeLoss(torch.nn.Module):
@@ -75,7 +75,7 @@ def contrasive_loss(features, label):
     # regularization term
     reg_loss = torch.sum(torch.norm(means, 2, 1))
 
-    total_loss = (var_loss + dist_loss) / num_clusters
+    total_loss = (var_loss + dist_loss + gamma*reg_loss) / num_clusters
 
     return total_loss.type(float_type)
 
