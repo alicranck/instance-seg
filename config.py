@@ -1,19 +1,17 @@
 import logging
 import os
-import torch
-import numpy as np
 from model import *
 
 # Hyper parameters
-k = 12
 embedding_dim = 32
-classifier_hidden = 128
-num_classes = 2  # classify foreground background for now
-batch_size = 2
-learning_rate = 0.001
+batch_size = 32
+learning_rate = 0.0003
 lr_decay = 0.98
 max_epoch_num = 100
 context = True
+
+# Checkpoints and logs directory - make sure to set local paths
+chkpts_dir = '/model_checkpoints/'
 
 if torch.cuda.is_available():
     float_type = torch.cuda.FloatTensor
@@ -26,33 +24,8 @@ else:
     int_type = torch.IntTensor
     long_type = torch.LongTensor
 
-# Data root
-data_root = 'E:\\Almog\\DLProjectData\\coco\\'
 
-# Local paths to images, annotations (COCO dataset)
-train_images_path = 'E:\\Almog\\DLProjectData\\coco\\train2017'
-validation_images_path = 'E:\Almog\DLProjectData\coco\\val2017'
-train_annotations = 'E:\Almog\DLProjectData\coco\\annotations_trainval2017\\annotations\\instances_train2017.json'
-val_annotations = 'E:\Almog\DLProjectData\coco\\annotations_trainval2017\\annotations\\instances_val2017.json'
-
-# Processed Images+Labels folders COCO
-processed_val_root = 'E:\\Almog\\DLProjectData\\coco\\processed_val2017\\'
-processed_train_root = 'E:\\Almog\\DLProjectData\\coco\\processed_train2017\\'
-
-# Processed Images+Labels folders VOC
-voc_processed_images = 'E:\Almog\DLProjectData\VOC2012\processedImages\\'
-voc_processed_labels = 'E:\Almog\DLProjectData\VOC2012\processedLabels\\'
-voc_processed_class_labels = 'E:\Almog\DLProjectData\VOC2012\processedClassLabels\\'
-
-voc_train_ids = 'E:\Almog\DLProjectData\VOC2012\ImageSets\Segmentation\\train.txt'
-voc_val_ids = 'E:\Almog\DLProjectData\VOC2012\ImageSets\Segmentation\\val.txt'
-
-
-# Checkpoints and logs directory
-chkpts_dir = 'C:\\Almog\\2018a\\DLProject\\instance_segmentation\\FeatureExtractor_checkpoints\\'
-
-
-def config_experiment(name, resume=True, context=False):
+def config_experiment(name, resume=True, context=context):
 
     exp = {}
     os.makedirs(chkpts_dir+name, exist_ok=True)
@@ -61,33 +34,27 @@ def config_experiment(name, resume=True, context=False):
     if resume:
 
         try:
-            exp = torch.load(chkpts_dir+name+'\\chkpt.pth',map_location=lambda storage, loc: storage)
+            exp = torch.load(chkpts_dir+name+'/chkpt.pth',map_location=lambda storage, loc: storage)
             logger.info("loading checkpoint, experiment: " + name)
             return exp, logger
         except Exception as e:
-            print(e)
             logger.warning('checkpoint does not exist. creating new experiment')
 
     fe = FeatureExtractor(embedding_dim, context=context)
-    classifier = ClassifyingModule(embedding_dim, classifier_hidden, num_classes)
     exp['fe_state_dict'] = fe.state_dict()
-    exp['classifier_state_dict'] = classifier.state_dict()
     exp['epoch'] = 0
-    exp['best_mAP'] = None
+    exp['best_dice'] = None
     exp['train_fe_loss'] = []
     exp['val_fe_loss'] = []
-    exp['train_class_loss'] = []
-    exp['val_class_loss'] = []
-    exp['gtfg_mAP_history'] = []
-    exp['predfg_mAP_history'] = []
+    exp['dice_history'] = []
 
     return exp, logger
 
 
 def save_experiment(exp, name, isBest=False):
-    torch.save(exp,chkpts_dir+name+'\\chkpt.pth')
+    torch.save(exp,chkpts_dir+name+'/chkpt.pth')
     if isBest:
-        torch.save(exp, chkpts_dir + name + '\\best.pth')
+        torch.save(exp, chkpts_dir + name + '/best.pth')
 
 
 def config_logger(current_exp):
@@ -95,7 +62,7 @@ def config_logger(current_exp):
     logger.setLevel(logging.DEBUG)
     handler = logging.StreamHandler()
     handler.setLevel(logging.DEBUG)
-    handler2 = logging.FileHandler(chkpts_dir+current_exp+'\\log')
+    handler2 = logging.FileHandler(chkpts_dir+current_exp+'/log')
     handler2.setLevel(logging.INFO)
     formatter = logging.Formatter(
             '%(asctime)s %(name)-12s %(levelname)-8s %(message)s')

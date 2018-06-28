@@ -1,32 +1,27 @@
 import numpy as np
 from torch.autograd import Variable
 from scipy.misc import imsave
-from torchvision.transforms import ToTensor
 import hdbscan
 from sklearn.decomposition import PCA
-from torchvision.transforms import ToTensor, ToPILImage
-from sklearn.manifold import TSNE
 import matplotlib
-#matplotlib.use('Agg')
+matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 import skimage.measure
 from skimage.transform import rescale
-import os
-from pycocotools.coco import COCO
-from pycocotools.cocoeval import COCOeval
-import pycocotools.cocostuffhelper as helper
-from scipy.ndimage import zoom
 from config import *
-import PIL.Image as im
-from data_preprocessing import annsToSeg
-import time
 
 
 
-def predict_label(features, downsample_factor=1, min_cluster=250):
+
+def predict_label(features, downsample_factor=2, min_cluster=350):
     '''
-    predicts a segmentation mask from the network output
+    predicts a segmentation mask from the network output. Uses PCA to reduce dimesionality
+    of the input, mainly due to performance reasons.
     :param features: (c,h,w) ndarray containing the feature vectors outputted by the model
+    :param downsample_factor: the features are downsampled by this factor using max-pooling.
+                        this improves stability of the clustering, and reduces running time.
+    :param min_cluster: hDBSCAN minimal cluster size. It is recommended to tune this hyperparametr
+                    as it has great effect on the clustering results.
     :return: (h,w) ndarray with the predicted label (currently without class predictions
     '''
     features = np.transpose(features, [1,2,0])  # transpose to (h,w,c)
@@ -41,48 +36,24 @@ def predict_label(features, downsample_factor=1, min_cluster=250):
     cluster_mask = cluster_features(reduced_features, min_cluster) # cluster with hDBSCAN
     #cluster_mask = determine_background(flat_features, cluster_mask)
     predicted_label = np.reshape(cluster_mask, [h,w])
-    predicted_label = rescale(predicted_label, order=0, scale=downsample_factor, preserve_range=True)
+    predicted_label = rescale(predicted_label, order=0, mode='constant', scale=downsample_factor,
+                              preserve_range=True)
     return np.asarray(predicted_label, np.int32)
 
 
-def determine_background(features, cluster_mask):
-    '''
-    this function labels the cluster whose mean is closest to 0 as background
-    :param features: a (n, d) ndarray of embeddings
-    :param cluster_mask: a (n, 1) vector of cluster labels
-    :return: an  (n, 1) vector of cluster labels, when the cluster with the smallest mean is labeled 0.
-    '''
-    min_mean = None
-    background_label = 0
-    cluster_mask += 1
-    cluster_labels = np.unique(cluster_mask)
-
-    for label in cluster_labels:
-        if label==0:
-            continue
-        label_features = features[cluster_mask==label]
-        cluster_mean_norm = np.linalg.norm(np.mean(label_features, 0), 2)
-
-        if min_mean is None or cluster_mean_norm < min_norm:
-            min_norm = cluster_mean_norm
-            background_label = label
-
-    cluster_mask[cluster_mask==background_label] = 0
-
-    return cluster_mask
-
-
-def cluster_features(features, min_cluster=250):
+def cluster_features(features, min_cluster=350):
     '''
     this function takes a (h*w,c) numpy array, and clusters the c-dim points using MeanShift/DBSCAN.
-    this function is meant to use for visualization and evaluation only.
+    this function is meant to use for visualization and evaluation only.  Meanshift is much slower
+    but yields significantly better results.
     :param features: (h*w,c) array of h*w d-dim features extracted from the photo.
+    :param min_cluster: min_cluster: hDBSCAN minimal cluster size. It is recommended to tune this hyperparametr
+                    as it has great effect on the clustering results.
     :return: returns a (h*w,1) array with the cluster indices.
     '''
     # Define DBSCAN instance and cluster features
     dbscan = hdbscan.HDBSCAN(algorithm='boruvka_kdtree',min_cluster_size=min_cluster)
-    labels = dbscan.fit_predict(features)
-    #labels[np.where(labels==-1)] = 0
+    labels = dbscan.fit_predict(features) + 1  # Unclustered pixels are labeled as -1 by the hDBSCAN
 
     return labels
 
@@ -174,7 +145,7 @@ def dice_score(x, y):
     return total_score/len(x_instances)
 
 
-def evaluate_model(model, dataloader, loss_fn, name, epoch):
+def evaluate_model(model, dataloader, loss_fn):
     '''
     evaluates average loss of a model on a given loss function, and average dice distance of
     some segmentations.
@@ -187,7 +158,7 @@ def evaluate_model(model, dataloader, loss_fn, name, epoch):
     running_dice = 0
     for i, batch in enumerate(dataloader):
         dice_dist = 0
-        inputs = Variable(batch['image'].type(float_type), volatile=True)
+        inputs = Variable(batch['image'].type(float_type))
         labels = batch['label'].cpu().numpy()
 
         features = model(inputs)
@@ -198,132 +169,13 @@ def evaluate_model(model, dataloader, loss_fn, name, epoch):
             pred = predict_label(item, downsample_factor=2)
             dice_dist += best_symmetric_dice(pred, labels[j])
 
-        running_loss += current_loss.data.cpu().numpy()[0]
+        running_loss += current_loss.cpu().data[0]
         running_dice += dice_dist / (j+1)
 
     val_loss = running_loss / (i+1)
     average_dice = running_dice / (i+1)
 
-    visualize(inputs.data[0].cpu().numpy(), labels[0], np_features[0], name, epoch)
-
     return val_loss, average_dice
 
-
-def test_model(model, image_path, target_path, id):
-
-    toTensor = ToTensor()
-    img = im.open(image_path)
-
-    old_size = img.size  # old_size is in (width, height) format
-    new_size = (old_size[0] - (old_size[0]%32), old_size[1] - (old_size[1]%32))
-
-    img = img.resize(new_size, im.ANTIALIAS)
-    img_tensor = torch.unsqueeze(toTensor(img),0)
-
-    features = model(img_tensor)
-    np_features = features.data.cpu().numpy()
-
-    predicted_label = predict_label(np_features, downsample_factor=1)
-    imsave(target_path + str(id) + 'seg.png', predicted_label)
-
-    # draw predicted seg on img and save
-    plt.imshow(img)
-    plt.imshow(predicted_label, alpha=0.5)
-    plt.savefig(target_path + str(id) + 'vis.png')
-    plt.close()
-
-
-def evaluate_model_coco(fe_model, class_model, dataloader, fe_loss_fn, class_loss_fn, num_samples=400, downsample_factor=2, min_cluster=250):
-
-    cocoGt = COCO(val_annotations)
-    toPil = ToPILImage()
-    toTensor = ToTensor()
-    img_ids = []
-    coco_gtfg_detections = []
-    coco_predfg_detections = []
-    running_fe_loss = 0
-    running_class_loss = 0
-    miss_cnt = 0
-
-    for i, batch in enumerate(dataloader):
-        img = batch[0][0]
-        ann = batch[0][1]
-        try:
-            voc_label = annsToSeg(ann)
-        except Exception as e:
-            print("error converting ann to seg")
-            print(type(e))
-            miss_cnt += 1
-            continue
-        img_ids.append(ann[0]['image_id'])
-
-        old_size = img.size  # old_size is in (width, height) format
-        new_size = (old_size[0] - (old_size[0] % 32), old_size[1] - (old_size[1] % 32))
-
-        voc_label = zoom(voc_label, [new_size[1]/old_size[1], new_size[0]/old_size[0]], order=0)
-        img = img.resize(new_size, im.ANTIALIAS)
-
-        fg_label = np.where(voc_label>0, 1, 0)
-        img_tensor = torch.unsqueeze(toTensor(img), 0)
-
-        features = fe_model(Variable(img_tensor.type(float_type)))
-        fg_pred = class_model(features)
-
-        fg_mask = np.where(fg_pred.data[0].cpu().numpy()[1]>fg_pred.data[0].cpu().numpy()[0], 1, 0)
-
-        fe_loss = fe_loss_fn(features, np.expand_dims(voc_label,0))
-        class_loss = class_loss_fn(fg_pred, Variable(torch.IntTensor(np.expand_dims(fg_label,0)).type(long_type)))
-
-        running_fe_loss += fe_loss.data.cpu().numpy()
-        running_class_loss += class_loss.data.cpu().numpy()
-
-        np_features = features.data[0].cpu().numpy()
-
-        pred = predict_label(np_features, downsample_factor, min_cluster)
-        pred += 2
-
-        gtfg_pred = pred * fg_label
-        predfg_pred = pred * fg_mask
-        gtfg_pred = zoom(gtfg_pred, [old_size[1]/new_size[1], old_size[0]/new_size[0]], order=0)
-        predfg_pred = zoom(predfg_pred, [old_size[1]/new_size[1], old_size[0]/new_size[0]], order=0)
-
-        coco_gtfg_detections.extend(helper.segmentationToCocoResult(gtfg_pred, ann[0]['image_id'], 0))
-        coco_predfg_detections.extend(helper.segmentationToCocoResult(predfg_pred, ann[0]['image_id'], 0))
-
-        for d in coco_gtfg_detections:
-            d['score'] = 0.8
-
-        for d in coco_predfg_detections:
-            d['score'] = 0.8
-	
-        if i%200==0:
-           print('evaluated ' + str(i) + ' images.')
-        if i==num_samples-1:
-            break
-
-    num_samples = i - miss_cnt
-    coco_gtfg_Dt = cocoGt.loadRes(coco_gtfg_detections)
-
-    cocoEval = COCOeval(cocoGt, coco_gtfg_Dt, 'segm')
-    cocoEval.params.imgIds = img_ids
-    cocoEval.params.useCats = 0
-    cocoEval.evaluate()
-    cocoEval.accumulate()
-    cocoEval.summarize()
-
-    gtfg_map = cocoEval.stats[0]
-
-    coco_predfg_Dt = cocoGt.loadRes(coco_predfg_detections)
-
-    cocoEval = COCOeval(cocoGt, coco_predfg_Dt, 'segm')
-    cocoEval.params.imgIds = img_ids
-    cocoEval.params.useCats = 0
-    cocoEval.evaluate()
-    cocoEval.accumulate()
-    cocoEval.summarize()
-
-    predfg_map = cocoEval.stats[0]
-
-    return running_fe_loss[0]/num_samples, running_class_loss[0]/num_samples, gtfg_map, predfg_map
 
 
