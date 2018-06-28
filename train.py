@@ -10,10 +10,10 @@ from config import *
 current_experiment = 'test_05'
 
 # Paths to data, labels
-data_path = "/home/alicranck/Desktop/DLProject/data/VOCdevkit/VOC2012/JPEGImages/"
-labels_path = "/home/alicranck/Desktop/DLProject/data/VOCdevkit/VOC2012/SegmentationObject/"
-train_ids_path = "/home/alicranck/Desktop/DLProject/data/VOCdevkit/VOC2012/ImageSets/Segmentation/train.txt"
-val_ids_path = "/home/alicranck/Desktop/DLProject/data/VOCdevkit/VOC2012/ImageSets/Segmentation/val.txt"
+data_path = "/data/VOCdevkit/VOC2012/JPEGImages/"
+labels_path = "/data/VOCdevkit/VOC2012/SegmentationObject/"
+train_ids_path = "/data/VOCdevkit/VOC2012/ImageSets/Segmentation/train.txt"
+val_ids_path = "/data/VOCdevkit/VOC2012/ImageSets/Segmentation/val.txt"
 
 
 def run():
