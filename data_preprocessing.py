@@ -9,8 +9,9 @@ from scipy import ndimage
 import matplotlib.pyplot as plt
 from pycocotools.coco import COCO
 from config import *
+import pycocotools.cocostuffhelper as helper
 
-coco = COCO(train_annotations)
+coco = COCO(val_annotations)
 
 
 #def main():
@@ -38,7 +39,6 @@ def annsToSeg(anns):
     '''
     converts COCO-format annotations of a given image to a PASCAL-VOC style label
      !!!No guarantees where segmentations overlap - might lead to loss of objects!!!
-     resizes label to (224, 224)
     :param anns: COCO annotations as return by 'coco.loadAnns'
     :return: a 2D numpy array (of type int32) where the value of each pixel is the ID of the instance
                 to which it belongs
@@ -47,19 +47,25 @@ def annsToSeg(anns):
 
     h = image_details['height']
     w = image_details['width']
-    short_side = min(h, w)
-    rescale_ratio = 224.0/short_side
 
     seg = np.zeros((h, w))
     masks, anns = annsToMask(anns, h, w)
 
     for i,mask in enumerate(masks):
-        seg = np.where(seg>0,seg, mask*anns[i]['id'])
+        seg = np.where(seg>0,seg, mask*(i+1))
 
     seg = seg.astype(np.int32)
-    seg = ndimage.zoom(seg, rescale_ratio, order=0, prefilter=False)
-    seg = crop_center(seg, 224,224)
+
     return seg
+
+
+def batchAnnsToSeg(anns_batch):
+    segs = []
+    for ann in  anns_batch:
+        seg = annsToSeg(ann)
+        segs.append(seg)
+
+    return np.asarray(segs)
 
 
 
