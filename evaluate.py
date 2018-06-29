@@ -1,23 +1,27 @@
 import numpy as np
 from torch.autograd import Variable
 from scipy.misc import imsave
-from scipy.spatial.distance import dice
 import hdbscan
 from sklearn.decomposition import PCA
-from sklearn.manifold import TSNE
 import matplotlib
 matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 import skimage.measure
 from skimage.transform import rescale
-import os
 from config import *
 
 
-def predict_label(features, downsample_factor=1):
+
+
+def predict_label(features, downsample_factor=2, min_cluster=350):
     '''
-    predicts a segmentation mask from the network output
+    predicts a segmentation mask from the network output. Uses PCA to reduce dimesionality
+    of the input, mainly due to performance reasons.
     :param features: (c,h,w) ndarray containing the feature vectors outputted by the model
+    :param downsample_factor: the features are downsampled by this factor using max-pooling.
+                        this improves stability of the clustering, and reduces running time.
+    :param min_cluster: hDBSCAN minimal cluster size. It is recommended to tune this hyperparametr
+                    as it has great effect on the clustering results.
     :return: (h,w) ndarray with the predicted label (currently without class predictions
     '''
     features = np.transpose(features, [1,2,0])  # transpose to (h,w,c)
@@ -29,55 +33,27 @@ def predict_label(features, downsample_factor=1):
 
     flat_features = np.reshape(features, [h*w,c])
     reduced_features = reduce(flat_features, 10)  # reduce dimension using PCA
-    cluster_mask = cluster_features(reduced_features)
+    cluster_mask = cluster_features(reduced_features, min_cluster) # cluster with hDBSCAN
     #cluster_mask = determine_background(flat_features, cluster_mask)
     predicted_label = np.reshape(cluster_mask, [h,w])
-    predicted_label = rescale(predicted_label, order=0, scale=downsample_factor, preserve_range=True)
+    predicted_label = rescale(predicted_label, order=0, mode='constant', scale=downsample_factor,
+                              preserve_range=True)
     return np.asarray(predicted_label, np.int32)
 
 
-def determine_background(features, cluster_mask):
-    '''
-    this function labels the cluster whose mean is closest to 0 as background
-    :param features: a (n, d) ndarray of embeddings
-    :param cluster_mask: a (n, 1) vector of cluster labels
-    :return: an  (n, 1) vector of cluster labels, when the cluster with the smallest mean is labeled 0.
-    '''
-    min_mean = None
-    background_label = 0
-    cluster_mask += 1
-    cluster_labels = np.unique(cluster_mask)
-
-    for label in cluster_labels:
-        if label==0:
-            continue
-        label_features = features[cluster_mask==label]
-        cluster_mean_norm = np.linalg.norm(np.mean(label_features, 0), 2)
-
-        if min_mean is None or cluster_mean_norm < min_norm:
-            min_norm = cluster_mean_norm
-            background_label = label
-
-    cluster_mask[cluster_mask==background_label] = 0
-
-    return cluster_mask
-
-
-def cluster_features(features):
+def cluster_features(features, min_cluster=350):
     '''
     this function takes a (h*w,c) numpy array, and clusters the c-dim points using MeanShift/DBSCAN.
-    this function is meant to use for visualization and evaluation only.
+    this function is meant to use for visualization and evaluation only.  Meanshift is much slower
+    but yields significantly better results.
     :param features: (h*w,c) array of h*w d-dim features extracted from the photo.
+    :param min_cluster: min_cluster: hDBSCAN minimal cluster size. It is recommended to tune this hyperparametr
+                    as it has great effect on the clustering results.
     :return: returns a (h*w,1) array with the cluster indices.
     '''
     # Define DBSCAN instance and cluster features
-    dbscan = hdbscan.HDBSCAN(algorithm='boruvka_kdtree',min_cluster_size=100)
-    labels = dbscan.fit_predict(features)
-    labels[np.where(labels==-1)] = 0
-    # suppress small clusters
-    #for i, count in enumerate(counts):
-        #if count<100 or instances[i]==-1:
-            #labels = np.where(labels==instances[i], 0, labels)
+    dbscan = hdbscan.HDBSCAN(algorithm='boruvka_kdtree',min_cluster_size=min_cluster)
+    labels = dbscan.fit_predict(features) + 1  # Unclustered pixels are labeled as -1 by the hDBSCAN
 
     return labels
 
@@ -169,7 +145,7 @@ def dice_score(x, y):
     return total_score/len(x_instances)
 
 
-def evaluate_model(model, dataloader, loss_fn, name, epoch):
+def evaluate_model(model, dataloader, loss_fn):
     '''
     evaluates average loss of a model on a given loss function, and average dice distance of
     some segmentations.
@@ -182,7 +158,7 @@ def evaluate_model(model, dataloader, loss_fn, name, epoch):
     running_dice = 0
     for i, batch in enumerate(dataloader):
         dice_dist = 0
-        inputs = Variable(batch['image'].type(float_type), volatile=True)
+        inputs = Variable(batch['image'].type(float_type))
         labels = batch['label'].cpu().numpy()
 
         features = model(inputs)
@@ -193,12 +169,13 @@ def evaluate_model(model, dataloader, loss_fn, name, epoch):
             pred = predict_label(item, downsample_factor=2)
             dice_dist += best_symmetric_dice(pred, labels[j])
 
-        running_loss += current_loss.data.cpu().numpy()[0]
-        running_dice += dice_dist / j
+        running_loss += current_loss.cpu().data[0]
+        running_dice += dice_dist / (j+1)
 
     val_loss = running_loss / (i+1)
     average_dice = running_dice / (i+1)
 
-    visualize(inputs.data[0].cpu().numpy(), labels[0], np_features[0], name, epoch)
-
     return val_loss, average_dice
+
+
+

@@ -2,9 +2,15 @@
 
 
 pycocotools
-torch
+torch 0.4.0
 torchvision
 numpy
+scipy
+matplotlib
+hdbscan
+scikit-image
+scikit-learn
+
 
 
 
