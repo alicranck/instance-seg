@@ -42,6 +42,6 @@ without context:
 
 ## Disclaimer
 I have not tested this code extensively as it was used for a personal research project. Please let me know if you find any 
-errors inherent in the code and I will try to adress these as necessary.
+errors inherent in the code and I will try to address these as necessary.
 
 
