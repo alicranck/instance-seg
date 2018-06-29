@@ -31,9 +31,12 @@ errors inherent in the code and I will try to adress these as necessary.
 
 
 Some results obtained after training the network on COCO for ~15 epochs with context:
-![sample_image_1](/images/sample1.png)
-![sample_image_2](/images/sample2.png)
-![sample_image_3](/images/sample3.png)
+![sample_image_1](/images/sample_1.png)
+![sample_image_2](/images/sample_2.png)
+![sample_image_3](/images/sample_3.png)
+
+
+
 
 without context:
 ![sample_image_no_1](/images/sample_no_1.png)
